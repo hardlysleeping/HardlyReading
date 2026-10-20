@@ -130,6 +130,9 @@ Search results are **ticked, not added on click** — click a card to select it,
 then use the bar that appears to queue the whole selection at once. Nothing is
 queued until you say so.
 
+**Add all results to queue** asks for confirmation first, because one click can
+queue a thousand items.
+
 Each card carries a badge once that item is known to the queue, with a different
 symbol per state:
 
@@ -152,6 +155,14 @@ Deleting is deliberately not an always-visible button. Press **Select** in the
 Library, tick the files you want gone, then **Delete** — it confirms with the
 list of filenames before touching disk. Press **Cancel** or **Done** to leave
 select mode without deleting anything.
+
+### The library reads the folder, not just the queue
+
+The Library lists what is actually in your download folder. Files are matched
+against the queue first, then the folder is scanned for anything else — so a
+download from an earlier run, or one you copied in by hand, still appears after
+a restart or after you remove the job that fetched it. Removing a job from the
+queue never hides the file it already downloaded.
 
 Files land in your downloads folder, under one subfolder per series:
 

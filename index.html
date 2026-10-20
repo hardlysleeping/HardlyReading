@@ -953,6 +953,14 @@ $("selClear").onclick = ()=>{
 
 $("addAllBtn").onclick = async ()=>{
   if(!lastResult) return;
+  // "Add all" can queue a thousand items in one click, so ask first.
+  const n = lastResult.numFound;
+  const ok = confirm(
+    `Queue all ${n.toLocaleString()} results?\n\n` +
+    "This resolves the whole search, not just this page. It can take a while " +
+    "and use a lot of disk."
+  );
+  if(!ok) return;
   const btn = $("addAllBtn");
   btn.disabled = true;
   try{

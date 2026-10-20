@@ -44,7 +44,7 @@ ENGINE = engine.Engine()
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "HardlyReading/1.2.0"
+    server_version = "HardlyReading/1.3.0"
 
     def log_message(self, fmt, *args):
         pass  # quiet
@@ -79,6 +79,58 @@ class Handler(BaseHTTPRequestHandler):
         except ValueError:
             return {}
 
+    @staticmethod
+    def _resolve_dir(jid):
+        """Directory behind a job id, or a `folder:` pseudo-id from the library
+        scan. None when neither resolves."""
+        if jid.startswith(ENGINE.FOLDER_PREFIX):
+            return ENGINE.folder_path(jid[len(ENGINE.FOLDER_PREFIX):])
+        j = ENGINE.get(jid)
+        return j.dir if j and j.dir else None
+
+    @staticmethod
+    def _library_item(job, series, name, path, entry):
+        """One library row: page count, kind and reading position for a file."""
+        pages = engine.comic_pages(path)
+        is_pdf = path.lower().endswith(".pdf")
+        if not pages and is_pdf:
+            # No client-side renderer, but the count is readable from the PDF
+            # structure, so the library shows real totals instead of 0p.
+            pages = [str(i) for i in range(engine.pdf_page_count(path))]
+        key = engine.book_key(entry)
+        done = ENGINE.get_progress(key)
+        return {
+            "job": job,
+            "key": key,
+            "series": series,
+            "name": name,
+            "size": os.path.getsize(path),
+            "pages": len(pages),
+            "kind": "pdf" if is_pdf else ("cbz" if pages else "other"),
+            "readable": bool(pages) or is_pdf,
+            "progress": done,
+            "finished": bool(pages) and done >= len(pages) - 1,
+        }
+
+    @staticmethod
+    def _library_from_jobs():
+        """Library rows contributed by finished jobs, plus the real files they
+        cover (so the folder scan can skip duplicates)."""
+        items, seen = [], set()
+        for j in ENGINE.jobs:
+            if j.status != "done" or not j.dir or not os.path.isdir(j.dir):
+                continue
+            for e in j.items:
+                if e.get("skip"):
+                    continue
+                p = os.path.join(j.dir, e.get("outname") or "")
+                if not os.path.isfile(p):
+                    continue
+                seen.add(os.path.realpath(p))
+                items.append(Handler._library_item(
+                    j.id, j.series or j.label, e.get("outname"), p, e))
+        return items, seen
+
     # ---------- routes
     def do_GET(self):
         u = urllib.parse.urlparse(self.path)
@@ -110,14 +162,19 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/files":
             jid = (qs.get("id") or [""])[0]
-            j = ENGINE.get(jid)
-            if not j or not j.dir or not os.path.isdir(j.dir):
+            d = self._resolve_dir(jid)
+            if not d or not os.path.isdir(d):
                 return self._send(404, {"error": "no files for that job"})
+            if jid.startswith(ENGINE.FOLDER_PREFIX):
+                # A folder the library found by scanning, not a job.
+                entries = [{"outname": n, "identifier": None, "file": n}
+                           for n in sorted(os.listdir(d))
+                           if n.lower().endswith((".cbz", ".cbr", ".cbt", ".zip", ".pdf"))]
+            else:
+                entries = [e for e in ENGINE.get(jid).items if not e.get("skip")]
             out = []
-            for e in j.items:
-                if e.get("skip"):
-                    continue
-                p = os.path.join(j.dir, e.get("outname") or "")
+            for e in entries:
+                p = os.path.join(d, e.get("outname") or "")
                 if not os.path.isfile(p):
                     continue
                 pages = engine.comic_pages(p)
@@ -134,7 +191,7 @@ class Handler(BaseHTTPRequestHandler):
                     "key": engine.book_key(e),
                     "progress": ENGINE.get_progress(engine.book_key(e)),
                 })
-            return self._send(200, {"dir": j.dir, "files": out})
+            return self._send(200, {"dir": d, "files": out})
 
         if path == "/api/page":
             jid = (qs.get("id") or [""])[0]
@@ -144,11 +201,12 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError:
                 idx = 0
             j = ENGINE.get(jid)
-            if not j or not j.dir:
+            d = self._resolve_dir(jid)
+            if not d:
                 return self._send(404, {"error": "no such job"})
-            # Never trust the client with a path: resolve inside the job folder.
-            target = os.path.realpath(os.path.join(j.dir, os.path.basename(name)))
-            if not target.startswith(os.path.realpath(j.dir)):
+            # Never trust the client with a path: resolve inside the folder.
+            target = os.path.realpath(os.path.join(d, os.path.basename(name)))
+            if not target.startswith(os.path.realpath(d)):
                 return self._send(400, {"error": "bad path"})
             pages = engine.comic_pages(target)
             if not pages:
@@ -166,11 +224,11 @@ class Handler(BaseHTTPRequestHandler):
             # Raw file for the browser's own PDF viewer.
             jid = (qs.get("id") or [""])[0]
             name = (qs.get("file") or [""])[0]
-            j = ENGINE.get(jid)
-            if not j or not j.dir:
+            d = self._resolve_dir(jid)
+            if not d:
                 return self._send(404, {"error": "no such job"})
-            target = os.path.realpath(os.path.join(j.dir, os.path.basename(name)))
-            if not target.startswith(os.path.realpath(j.dir)) or not os.path.isfile(target):
+            target = os.path.realpath(os.path.join(d, os.path.basename(name)))
+            if not target.startswith(os.path.realpath(d)) or not os.path.isfile(target):
                 return self._send(404, {"error": "not found"})
             try:
                 size = os.path.getsize(target)
@@ -189,40 +247,22 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path == "/api/library":
-            # Every downloaded file across all jobs.
-            items = []
-            for j in ENGINE.jobs:
-                if j.status != "done" or not j.dir or not os.path.isdir(j.dir):
+            # Every downloaded file: first from job state, then anything else
+            # sitting in the download folder that no job accounts for.
+            items, seen = self._library_from_jobs()
+            for f in ENGINE.scan_folder():
+                p = os.path.join(ENGINE.settings["download_dir"], f["series"], f["name"])
+                rp = os.path.realpath(p)
+                if rp in seen or not os.path.isfile(p):
                     continue
-                series = j.series or j.label
-                for e in j.items:
-                    if e.get("skip"):
-                        continue
-                    p = os.path.join(j.dir, e.get("outname") or "")
-                    if not os.path.isfile(p):
-                        continue
-                    pages = engine.comic_pages(p)
-                    is_pdf = p.lower().endswith(".pdf")
-                    if not pages and is_pdf:
-                        # No client-side renderer, but the page count is
-                        # readable from the PDF structure so the library can
-                        # show real totals instead of 0p.
-                        npages = engine.pdf_page_count(p)
-                        pages = [str(i) for i in range(npages)]
-                    key = engine.book_key(e)
-                    done = ENGINE.get_progress(key)
-                    items.append({
-                        "job": j.id,
-                        "key": key,
-                        "series": series,
-                        "name": e.get("outname"),
-                        "size": os.path.getsize(p),
-                        "pages": len(pages),
-                        "kind": "pdf" if is_pdf else ("cbz" if pages else "other"),
-                        "readable": bool(pages) or is_pdf,
-                        "progress": done,
-                        "finished": bool(pages) and done >= len(pages) - 1,
-                    })
+                seen.add(rp)
+                items.append(self._library_item(
+                    job=ENGINE.FOLDER_PREFIX + f["series"],
+                    series=f["series"],
+                    name=f["name"],
+                    path=p,
+                    entry={"outname": f["name"]},
+                ))
             items.sort(key=lambda x: (x["series"].lower(), x["name"] or ""))
             return self._send(200, {"items": items, "count": len(items)})
 

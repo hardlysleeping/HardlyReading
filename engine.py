@@ -98,7 +98,7 @@ def http_json(url: str, timeout: int = 60):
     """GET a URL and return parsed JSON. No retry here — callers that can
     recover (the resolver, the per-item probe) do their own attempts."""
 
-    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/1.2.0"})
+    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/1.3.0"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.load(r)
 
@@ -756,6 +756,48 @@ class Engine:
             }
 
     # ---- worker
+    FOLDER_PREFIX = "folder:"
+
+    def folder_path(self, series):
+        """Resolve a `folder:<series>` pseudo-id to a directory under the
+        download root. Returns None if it would escape that root."""
+        root = os.path.realpath(self.settings.get("download_dir")
+                                or default_download_dir())
+        target = os.path.realpath(os.path.join(root, series or ""))
+        if target != root and not target.startswith(root + os.sep):
+            return None
+        return target if os.path.isdir(target) else None
+
+    def scan_folder(self):
+        """Files on disk that no job accounts for.
+
+        The library is built from job state, so a removed job (or a lost
+        state.json) used to hide files that were still sitting in the download
+        folder. This walks the folder so whatever is actually there shows up.
+        """
+        root = self.settings.get("download_dir") or default_download_dir()
+        if not os.path.isdir(root):
+            return []
+        exts = (".cbz", ".cbr", ".cbt", ".zip", ".pdf")
+        out = []
+        for dirpath, dirnames, filenames in os.walk(root):
+            dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+            series = os.path.relpath(dirpath, root)
+            if series == ".":
+                series = "Loose files"
+            for fn in filenames:
+                if not fn.lower().endswith(exts):
+                    continue
+                p = os.path.join(dirpath, fn)
+                if not os.path.isfile(p):
+                    continue
+                try:
+                    size = os.path.getsize(p)
+                except OSError:
+                    continue
+                out.append({"series": series, "name": fn, "size": size})
+        return out
+
     def covered(self):
         """Map archive identifier -> queue state, for the search grid.
 
@@ -1067,11 +1109,27 @@ class Engine:
         return {"removed": job_id}
 
     def delete_file(self, job_id, filename):
-        """Delete one downloaded file, its entry, and its reading position."""
+        """Delete one downloaded file, its entry, and its reading position.
+
+        Handles both a real job and a `folder:` pseudo-id, so a file the library
+        found by scanning can be deleted the same way as a queued one.
+        """
+        base = os.path.basename(filename)
+
+        if job_id.startswith(self.FOLDER_PREFIX):
+            d = self.folder_path(job_id[len(self.FOLDER_PREFIX):])
+            if not d:
+                raise ValueError("no such folder")
+            target = os.path.realpath(os.path.join(d, base))
+            if not target.startswith(os.path.realpath(d)) or not os.path.isfile(target):
+                raise ValueError("no such file")
+            self._clear_progress("file:" + base.lower())
+            os.remove(target)
+            return {"deleted": base}
+
         j = self.get(job_id)
         if not j or not j.dir:
             raise ValueError("no such job")
-        base = os.path.basename(filename)
         target = os.path.realpath(os.path.join(j.dir, base))
         if not target.startswith(os.path.realpath(j.dir)) or not os.path.isfile(target):
             raise ValueError("no such file")
