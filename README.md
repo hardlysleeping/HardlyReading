@@ -128,9 +128,21 @@ Worth knowing before you point it at a 500-issue collection:
 - **CBR needs a RAR extractor.** CBZ is read with the Python stdlib; CBR is RAR,
   so reading one requires `unrar`, `bsdtar`, or `7z` on PATH. Without one, CBR
   files still download and are named correctly — they just aren't readable in-app.
+- **PDF page progress is best-effort.** CBZ/CBR position is tracked server-side
+  and follows you between devices. PDFs are shown in the browser's own viewer,
+  which does not reliably expose the current page, so a PDF's position may not
+  survive a reload.
 - **Tested on Linux.** `run.py` handles Windows and macOS paths, the `aria2c.exe`
   lookup and the winget fallback, but has not been run on those platforms — treat
   them as untested rather than supported.
+
+## Skipping what you already have
+
+Before downloading a resolved collection, HardlyReading checks the destination
+folder against archive.org's checksums and drops any file whose MD5 is already
+there — so re-running a grab, or grabbing an overlapping collection, only
+fetches what is actually missing. The checksum index is cached in
+`.md5-index.json` so it is not rehashed on every run.
 
 ## Legal
 

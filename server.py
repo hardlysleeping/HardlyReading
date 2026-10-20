@@ -174,6 +174,13 @@ class Handler(BaseHTTPRequestHandler):
                     if not os.path.isfile(p):
                         continue
                     pages = engine.comic_pages(p)
+                    is_pdf = p.lower().endswith(".pdf")
+                    if not pages and is_pdf:
+                        # No client-side renderer, but the page count is
+                        # readable from the PDF structure so the library can
+                        # show real totals instead of 0p.
+                        npages = engine.pdf_page_count(p)
+                        pages = [str(i) for i in range(npages)]
                     key = engine.book_key(e)
                     done = ENGINE.get_progress(key)
                     items.append({
@@ -183,8 +190,8 @@ class Handler(BaseHTTPRequestHandler):
                         "name": e.get("outname"),
                         "size": os.path.getsize(p),
                         "pages": len(pages),
-                        "kind": "cbz" if pages else ("pdf" if p.lower().endswith(".pdf") else "other"),
-                        "readable": bool(pages) or p.lower().endswith(".pdf"),
+                        "kind": "pdf" if is_pdf else ("cbz" if pages else "other"),
+                        "readable": bool(pages) or is_pdf,
                         "progress": done,
                         "finished": bool(pages) and done >= len(pages) - 1,
                     })

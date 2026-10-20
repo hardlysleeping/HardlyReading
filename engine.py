@@ -3,6 +3,7 @@
 Stdlib only. Runs on Windows / Linux / macOS.
 """
 import json
+import hashlib
 import os
 import re
 import shutil
@@ -553,6 +554,9 @@ class Engine:
             "jobs_in_flight": 12,
             "between_jobs": 30,
             "preview": True,
+            "komga_naming": True,
+            # Skip anything whose checksum already exists in the destination.
+            "skip_existing": True,
         }
         self._worker = None
         self._conn = None
@@ -807,12 +811,34 @@ class Engine:
             kept_ids = {e.get("identifier") for e in ok}
             skipped = [i for i in items if i.get("skip")
                        or i.get("identifier") not in kept_ids]
+
+            # --- delta-vs-folder: drop anything already on disk, matched by
+            # archive's own checksum rather than by filename. Renaming a file
+            # or re-downloading a collection under a new label must not fetch
+            # the same bytes twice. Entries with no md5 are always kept.
+            job.dir = os.path.join(self.settings["download_dir"],
+                                   safe_name(job.series or job.label))
+            if self.settings.get("skip_existing", True) and job.dir:
+                have = md5_index(job.dir)
+                if have:
+                    already, fresh = [], []
+                    for e in ok:
+                        m = (e.get("md5") or "").lower()
+                        if m and m in have:
+                            e = dict(e)
+                            e["skip"] = True
+                            e["reason"] = f"already have it ({have[m]})"
+                            already.append(e)
+                        else:
+                            fresh.append(e)
+                    if already:
+                        ok = fresh
+                        skipped = skipped + already
+
             job.items = ok + skipped
             job.total_bytes = sum(i.get("size", 0) for i in ok)
             # Known now, not at download time, so the plan screen can show the
             # destination and warn about free space before anything starts.
-            job.dir = os.path.join(self.settings["download_dir"],
-                                   safe_name(job.series or job.label))
             job.status = "planned"
             job.message = (f"{len(ok)} item{'s' if len(ok) != 1 else ''} ready"
                            f" · {human_size(job.total_bytes)}")
@@ -1665,6 +1691,85 @@ def write_aria_input(entries, path):
     with open(path, "w", encoding="utf-8") as fh:
         for e in entries:
             fh.write(e["url"] + "\n  out=" + e["outname"] + "\n")
+
+
+def pdf_page_count(path: str) -> int:
+    """Page count from the PDF's own structure, without a rendering library.
+
+    Counts `/Type /Page` objects, which is what every PDF writer emits, and
+    falls back to `/Count` from the page tree root. Compressed object streams
+    (PDF 1.5+) would hide both, so this returns 0 rather than guessing when
+    neither matches; the reader still works, it just shows no total.
+    """
+    try:
+        with open(path, "rb") as fh:
+            data = fh.read()
+    except OSError:
+        return 0
+    if not data.startswith(b"%PDF"):
+        return 0
+    n = len(re.findall(rb"/Type\s*/Page[^s]", data))
+    if n:
+        return n
+    counts = [int(m) for m in re.findall(rb"/Count\s+(\d+)", data)]
+    return max(counts) if counts else 0
+
+
+def md5_index(root: str):
+    """{md5: filename} for every archive already under `root`.
+
+    Used by delta-vs-folder so a re-run fetches only what is missing. Hashes are
+    cached in a small sidecar keyed by (size, mtime), because rehashing a
+    100-issue library on every plan would take longer than the download it is
+    meant to avoid. Only comic/PDF extensions are considered — the sidecar and
+    partial downloads are ignored.
+    """
+    root = os.path.realpath(root)
+    if not os.path.isdir(root):
+        return {}
+    cache_path = os.path.join(root, ".md5-index.json")
+    cache = {}
+    try:
+        with open(cache_path, "r", encoding="utf-8") as fh:
+            cache = json.load(fh)
+    except (OSError, ValueError):
+        cache = {}
+
+    index = {}
+    fresh = {}
+    changed = False
+    for dirpath, _dirs, files in os.walk(root):
+        for fn in files:
+            low = fn.lower()
+            if not low.endswith((".cbz", ".cbr", ".cbt", ".zip", ".pdf")):
+                continue
+            full = os.path.join(dirpath, fn)
+            try:
+                st = os.stat(full)
+            except OSError:
+                continue
+            key = str(st.st_size) + ":" + str(int(st.st_mtime))
+            digest = cache.get(full)
+            if not isinstance(digest, dict) or digest.get("key") != key:
+                try:
+                    h = hashlib.md5()
+                    with open(full, "rb") as fh:
+                        for chunk in iter(lambda: fh.read(1 << 20), b""):
+                            h.update(chunk)
+                    digest = {"key": key, "md5": h.hexdigest()}
+                    changed = True
+                except OSError:
+                    continue
+            fresh[full] = digest
+            index[digest["md5"]] = os.path.relpath(full, root)
+
+    if changed or fresh != cache:
+        try:
+            with open(cache_path, "w", encoding="utf-8") as fh:
+                json.dump(fresh, fh)
+        except OSError:
+            pass
+    return index
 
 
 def verify_manifest(job_dir: str, entries, magic=True):

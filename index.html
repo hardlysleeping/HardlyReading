@@ -726,16 +726,40 @@ async function openBook(item){
   const qs = `id=${encodeURIComponent(item.job)}&file=${encodeURIComponent(item.name)}`;
 
   // PDFs are handed to the browser's own viewer — no server-side renderer.
+  // The page number is read from the viewer's `#page=` fragment as it changes,
+  // so position still lands in the same server-side table CBZ pages use.
   if(item.kind === "pdf"){
+    const start = Math.max(1, (item.progress || 0) + 1);
     wrap.innerHTML = `
       <div class="rbar">
         <span class="t">${esc(item.name)}</span>
         <span class="sp"></span>
+        <span id="rpdfpage" class="muted"></span>
         <button id="rclose">Close</button>
       </div>
-      <iframe src="/api/book?${qs}" style="flex:1;border:0;width:100%"></iframe>`;
+      <iframe id="rpdf" src="/api/book?${qs}#page=${start}&zoom=page-width"
+              style="flex:1;border:0;width:100%"></iframe>`;
     document.body.appendChild(wrap);
-    $("rclose").onclick = hideReader;
+
+    let last = [];
+    const poll = setInterval(() => {
+      const f = $("rpdf");
+      if(!f || !f.contentWindow) return;
+      let p = null, n = null;
+      try{
+        const loc = f.contentWindow.location.hash || "";
+        const m = /page=(\d+)/.exec(loc);
+        if(m) p = parseInt(m[1], 10) - 1;
+        // Chrome's built-in viewer is a plugin, so the hash is the only signal.
+      }catch(e){ /* cross-origin guards the hash; ignore */ }
+      if(p !== null && (!last.length || last[0] !== p)){
+        last = [p, n];
+        const el = $("rpdfpage");
+        if(el) el.textContent = n ? `${p + 1} / ${n}` : `page ${p + 1}`;
+        api("/api/progress", {key: item.key, page: p, total: n || 0}).catch(()=>{});
+      }
+    }, 1500);
+    $("rclose").onclick = () => { clearInterval(poll); hideReader(); };
     return;
   }
 
