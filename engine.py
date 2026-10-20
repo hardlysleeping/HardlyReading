@@ -557,6 +557,8 @@ class Engine:
             "komga_naming": True,
             # Skip anything whose checksum already exists in the destination.
             "skip_existing": True,
+            # Show the "hardlyreader" brand label in the reader header.
+            "show_brand": True,
         }
         self._worker = None
         self._conn = None

@@ -45,6 +45,46 @@
     animation:pulse 1.4s ease-in-out infinite}
   @keyframes pulse{50%{opacity:.35}}
 
+  /* ---- settings ---- */
+  .gear{background:var(--panel);border:1px solid var(--line);color:var(--dim);
+    width:36px;height:36px;border-radius:9px;font-size:16px;cursor:pointer;
+    flex:none;line-height:1}
+  .gear:hover{color:var(--text);border-color:var(--accent)}
+  .modal{position:fixed;inset:0;background:rgba(4,6,10,.72);z-index:200;
+    display:flex;align-items:center;justify-content:center;padding:20px}
+  .modal[hidden]{display:none}
+  .modalbox{background:var(--panel);border:1px solid var(--line);border-radius:14px;
+    width:100%;max-width:520px;max-height:88vh;display:flex;flex-direction:column;
+    box-shadow:0 24px 60px rgba(0,0,0,.5)}
+  .mhead{display:flex;align-items:center;padding:16px 20px;
+    border-bottom:1px solid var(--line)}
+  .mhead .mtitle{font-size:14px;font-weight:650;flex:1}
+  .mhead button{background:none;border:none;color:var(--dim);font-size:15px;
+    cursor:pointer;padding:4px 8px;border-radius:6px}
+  .mhead button:hover{color:var(--text)}
+  .mbody{padding:8px 20px 18px;overflow:auto}
+  .sgroup{font-size:11px;font-weight:700;color:var(--dim);letter-spacing:.07em;
+    text-transform:uppercase;margin:18px 0 4px}
+  .sgroup:first-child{margin-top:8px}
+  .rowchk{display:flex;gap:11px;align-items:flex-start;padding:9px 0;cursor:pointer}
+  .rowchk input{margin-top:2px;flex:none;accent-color:var(--accent);width:15px;height:15px}
+  .rowchk span{display:flex;flex-direction:column;gap:2px;font-size:13.5px}
+  .rowchk b{font-weight:550}
+  .rowchk em{font-style:normal;font-size:12px;color:var(--dim);line-height:1.35}
+  .rowchk code{background:var(--panel2);padding:1px 5px;border-radius:4px;
+    font-size:11px;color:var(--accent2)}
+  .rowfield{display:flex;flex-direction:column;gap:5px;margin:12px 0}
+  .rowfield span{font-size:12px;color:var(--dim)}
+  .rowfield input{background:var(--panel2);border:1px solid var(--line);
+    color:var(--text);border-radius:8px;padding:9px 11px;font-size:13px;
+    font-family:inherit;width:100%}
+  .rowfield input:focus{outline:none;border-color:var(--accent)}
+  .row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+  .mfoot{display:flex;align-items:center;gap:12px;padding:14px 20px;
+    border-top:1px solid var(--line)}
+  .msaved{flex:1;font-size:12px;color:var(--ok);opacity:0;transition:opacity .2s}
+  .msaved.on{opacity:1}
+
   .card{
     background:var(--panel);border:1px solid var(--line);
     border-radius:var(--radius);padding:20px;margin-bottom:16px;
@@ -195,14 +235,69 @@
 <body>
 <div class="wrap">
   <header>
-    <div class="logo">AG</div>
+    <div class="logo">HR</div>
     <div>
       <h1>HardlyReading</h1>
       <div class="sub">Internet Archive · magazines, comics &amp; PDFs</div>
     </div>
     <div class="spacer"></div>
     <div class="chip"><span class="dot" id="statusDot"></span><span id="statusText">Starting…</span></div>
+    <button class="gear" id="gearBtn" title="Settings">⚙</button>
   </header>
+
+  <!-- SETTINGS -->
+  <div class="modal" id="settingsModal" hidden>
+    <div class="modalbox">
+      <div class="mhead">
+        <span class="mtitle">Settings</span>
+        <button id="settingsClose">✕</button>
+      </div>
+      <div class="mbody">
+        <div class="sgroup">Reader</div>
+        <label class="rowchk">
+          <input type="checkbox" id="set_show_brand">
+          <span><b>Show "hardlyreader" label</b>
+            <em>Small brand mark in the reader header</em></span>
+        </label>
+
+        <div class="sgroup">Downloads</div>
+        <label class="rowchk">
+          <input type="checkbox" id="set_preview">
+          <span><b>Ask before downloading</b>
+            <em>Show the size and folder, then wait for you</em></span>
+        </label>
+        <label class="rowchk">
+          <input type="checkbox" id="set_skip_existing">
+          <span><b>Skip files I already have</b>
+            <em>Matched by archive.org checksum, not filename</em></span>
+        </label>
+        <label class="rowchk">
+          <input type="checkbox" id="set_komga_naming">
+          <span><b>Komga folder naming</b>
+            <em>One folder per series, <code>Series 001 (1976).cbz</code></em></span>
+        </label>
+
+        <label class="rowfield">
+          <span>Download folder</span>
+          <input type="text" id="set_download_dir" spellcheck="false">
+        </label>
+        <div class="row2">
+          <label class="rowfield">
+            <span>Parallel files</span>
+            <input type="number" id="set_jobs_in_flight" min="1" max="16">
+          </label>
+          <label class="rowfield">
+            <span>Pause between jobs (s)</span>
+            <input type="number" id="set_between_jobs" min="0" max="600">
+          </label>
+        </div>
+      </div>
+      <div class="mfoot">
+        <span class="msaved" id="settingsSaved"></span>
+        <button class="btn sm" id="settingsDone">Done</button>
+      </div>
+    </div>
+  </div>
 
   <div class="tabbar">
     <button class="tab on" data-tab="queue">Downloads</button>
@@ -726,6 +821,13 @@ $("libQ").oninput = renderLibrary;
 /* ---------- reader (ultra-basic preview) ---------- */
 let readerState = null;
 
+// The brand mark is a preference, not a fixture: users who want a clean
+// full-bleed page can turn it off in Settings.
+function brandHtml(){
+  const s = (lastState && lastState.settings) || {};
+  return s.show_brand === false ? "" : '<span class="brand">hardlyreader</span>';
+}
+
 async function openReader(jobId){
   let data;
   try{ data = await api("/api/files?id=" + encodeURIComponent(jobId)); }
@@ -786,7 +888,7 @@ async function openBook(item){
     const start = Math.max(1, (item.progress || 0) + 1);
     wrap.innerHTML = `
       <div class="rbar">
-        <span class="brand">hardlyreader</span>
+        ${brandHtml()}
         <span class="t">${esc(item.name)}</span>
         <span class="sp"></span>
         <span id="rpdfpage" class="muted"></span>
@@ -831,7 +933,7 @@ async function openBook(item){
 
   wrap.innerHTML = `
     <div class="rbar">
-      <span class="brand">hardlyreader</span>
+      ${brandHtml()}
       <span class="t">${esc(item.name)}</span>
       <span class="sp"></span>
       <button id="rprev">‹</button>
@@ -891,6 +993,79 @@ function paintPage(){
   $("rpage").textContent = `${s.page + 1} / ${s.count}`;
   $("rprev").disabled = s.page <= 0;
   $("rnext").disabled = s.page >= s.count - 1;
+}
+
+/* ---------- settings ---------- */
+const SETTING_FIELDS = {
+  show_brand:      {id:"set_show_brand",      type:"bool",  def:true},
+  preview:         {id:"set_preview",         type:"bool",  def:true},
+  skip_existing:   {id:"set_skip_existing",   type:"bool",  def:true},
+  komga_naming:    {id:"set_komga_naming",    type:"bool",  def:true},
+  download_dir:    {id:"set_download_dir",    type:"str",   def:""},
+  jobs_in_flight:  {id:"set_jobs_in_flight",  type:"int",   def:12, min:1, max:16},
+  between_jobs:    {id:"set_between_jobs",    type:"int",   def:30, min:0, max:600},
+};
+
+function fillSettings(settings){
+  for(const [key, f] of Object.entries(SETTING_FIELDS)){
+    const el = $(f.id); if(!el) continue;
+    const v = (settings && settings[key] !== undefined) ? settings[key] : f.def;
+    if(f.type === "bool") el.checked = !!v;
+    else el.value = (v === null || v === undefined) ? "" : v;
+  }
+}
+
+function readSettings(){
+  const out = {};
+  for(const [key, f] of Object.entries(SETTING_FIELDS)){
+    const el = $(f.id); if(!el) continue;
+    if(f.type === "bool"){
+      out[key] = el.checked;
+    } else if(f.type === "int"){
+      let n = parseInt(el.value, 10);
+      if(isNaN(n)) n = f.def;
+      if(f.min !== undefined) n = Math.max(f.min, n);
+      if(f.max !== undefined) n = Math.min(f.max, n);
+      out[key] = n;
+    } else {
+      out[key] = el.value.trim();
+    }
+  }
+  return out;
+}
+
+let settingsSaveTimer = null;
+function saveSettings(immediate){
+  clearTimeout(settingsSaveTimer);
+  settingsSaveTimer = setTimeout(async ()=>{
+    try{
+      const r = await api("/api/settings", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify(readSettings())
+      });
+      if(lastState) lastState.settings = r.settings;
+      const saved = $("settingsSaved");
+      if(saved){ saved.textContent = "Saved"; saved.classList.add("on");
+                 setTimeout(()=>saved.classList.remove("on"), 1200); }
+    }catch(e){ toast("Could not save: " + e.message); }
+  }, immediate ? 0 : 350);
+}
+
+function openSettings(){
+  fillSettings(lastState && lastState.settings);
+  $("settingsModal").hidden = false;
+}
+function closeSettings(){ $("settingsModal").hidden = true; }
+
+$("gearBtn").onclick = openSettings;
+$("settingsClose").onclick = closeSettings;
+$("settingsDone").onclick = closeSettings;
+$("settingsModal").addEventListener("click", (e)=>{
+  if(e.target === $("settingsModal")) closeSettings();
+});
+for(const f of Object.values(SETTING_FIELDS)){
+  const el = $(f.id); if(!el) continue;
+  el.addEventListener("change", ()=>saveSettings());
 }
 
 /* ---------- boot ---------- */
