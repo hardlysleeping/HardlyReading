@@ -10,6 +10,15 @@ folder so a comic server can read it without manual tidying.
 
 Everything runs on your own machine. No account, no cloud, no telemetry.
 
+> ### ☕ This app is useless without the Internet Archive
+>
+> Every search, every scan and every download comes from
+> [archive.org](https://archive.org) — a non-profit library that runs on
+> donations. If HardlyReading is useful to you,
+> **[donate to keep it online →](https://archive.org/donate)**
+
+---
+
 ![Download queue](docs/queue.png)
 
 ## How it works
