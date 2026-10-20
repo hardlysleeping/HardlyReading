@@ -98,7 +98,7 @@ def http_json(url: str, timeout: int = 60):
     """GET a URL and return parsed JSON. No retry here — callers that can
     recover (the resolver, the per-item probe) do their own attempts."""
 
-    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/1.6.0"})
+    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/1.6.1"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.load(r)
 
@@ -905,18 +905,30 @@ class Engine:
                     if not any(j.status in ("queued", "resume") for j in self.jobs):
                         return
                 continue
-            if job.status == "resume":
-                entries = [i for i in job.items if not i.get("skip")]
-                with self.lock:
-                    self.current = job.id
-                try:
-                    self._download(job, entries)
-                finally:
+            # One bad job must never stop the queue. Anything that escapes a
+            # job's own error handling is recorded against that job and the
+            # loop moves on, which is the whole point of a queue.
+            try:
+                if job.status == "resume":
+                    entries = [i for i in job.items if not i.get("skip")]
                     with self.lock:
-                        self.current = None
-                        self.save_state()
-            else:
-                self._process(job)
+                        self.current = job.id
+                    try:
+                        self._download(job, entries)
+                    finally:
+                        with self.lock:
+                            self.current = None
+                            self.save_state()
+                else:
+                    self._process(job)
+            except Exception as exc:  # noqa: BLE001
+                with self.lock:
+                    job.status = "failed"
+                    job.error = str(exc)
+                    job.message = "stopped unexpectedly"
+                    job.updated = time.time()
+                    self.current = None
+                    self.save_state()
             time.sleep(min(self.settings.get("between_jobs", 30), 60))
 
     def _process(self, job: Job):
@@ -986,9 +998,17 @@ class Engine:
             # was downloadable. Offering a Download button for zero files is a
             # dead end, so finish the job instead of waiting for a confirm.
             if not ok:
-                job.status = "done"
-                job.message = (f"already have all {len(skipped)} item(s)"
-                               if skipped else "nothing to download")
+                if skipped:
+                    # Everything was already on disk: that is success, not a
+                    # dead end with a Download button that would do nothing.
+                    job.status = "done"
+                    job.message = f"already have all {len(skipped)} item(s)"
+                else:
+                    # Nothing resolved at all — a bad identifier or an item
+                    # with no PDF/CBZ/rar. Say so instead of reporting success.
+                    job.status = "failed"
+                    job.error = "no downloadable files"
+                    job.message = "nothing to download"
                 job.updated = time.time()
                 with self.lock:
                     self.save_state()

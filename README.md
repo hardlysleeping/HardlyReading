@@ -151,6 +151,11 @@ downloaded file only happens in the Library, never from search.
 
 ### The queue is a real queue: you control the order
 
+Adding a link starts it straight away; when a job finishes the next one starts
+on its own, with a pause between jobs set by **Pause between jobs** in Settings
+(30 s by default, `0` for back-to-back). A job that fails is marked failed and
+the queue carries on rather than stalling.
+
 Jobs run in the order they appear. Every waiting job has four buttons —
 `⤒` top, `▲` up one, `▼` down one, `⤓` bottom — and the `#3` chip on a card is
 its actual place in the run order, not its row number. Only waiting work can be

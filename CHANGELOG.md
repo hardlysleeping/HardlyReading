@@ -3,6 +3,19 @@
 Notable changes to HardlyReading. Versions are tagged on GitHub with matching
 release notes.
 
+## [1.6.1] — 2026-10-20
+
+### Fixed
+
+- **One bad job could stop the queue.** The worker loop had no catch around a
+  job's own handling, so an exception escaping it killed the thread and every
+  waiting job sat there until you added something else. A failure is now
+  recorded against that job and the queue moves on to the next one.
+- **A job that resolved to nothing reported success.** An unknown identifier, or
+  an item with no PDF/CBZ/RAR, finished as "done" with no files. It is now
+  "failed · no downloadable files"; the "done" path is kept for the case that
+  actually is success — everything already on disk.
+
 ## [1.6.0] — 2026-10-20
 
 ### Added
@@ -127,6 +140,7 @@ First release.
 - Built-in CBZ / CBR / PDF reader; CBR needs `unrar`, `bsdtar` or `7z`
 - Cross-platform launcher that finds `aria2c` and opens the browser
 
+[1.6.1]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v1.6.1
 [1.6.0]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v1.6.0
 [1.5.0]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v1.5.0
 [1.4.0]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v1.4.0
