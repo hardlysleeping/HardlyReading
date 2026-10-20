@@ -149,6 +149,15 @@ A queued card offers **Remove from queue**; a downloaded card offers
 **Open in library**, which jumps to the file and highlights it. Deleting a
 downloaded file only happens in the Library, never from search.
 
+### The queue is a real queue: you control the order
+
+Jobs run in the order they appear. Every waiting job has four buttons —
+`⤒` top, `▲` up one, `▼` down one, `⤓` bottom — and the `#3` chip on a card is
+its actual place in the run order, not its row number. Only waiting work can be
+moved: reordering a download already in flight would promise an order the file
+transfer cannot honour. The order is saved in `state.json`, so it survives a
+restart.
+
 ### Deleting from the library
 
 Deleting is deliberately not an always-visible button. Press **Select** in the

@@ -98,7 +98,7 @@ def http_json(url: str, timeout: int = 60):
     """GET a URL and return parsed JSON. No retry here — callers that can
     recover (the resolver, the per-item probe) do their own attempts."""
 
-    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/1.5.0"})
+    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/1.6.0"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.load(r)
 
@@ -620,7 +620,12 @@ class Engine:
                 self.jobs.append(j)
             except TypeError:
                 continue
-        self.order = [j.id for j in self.jobs]
+        # Restore the saved order, then append any job the file did not know
+        # about, so a hand-edited or older state file cannot hide work.
+        saved = d.get("order") or []
+        known = {j.id for j in self.jobs}
+        self.order = [jid for jid in saved if jid in known]
+        self.order += [j.id for j in self.jobs if j.id not in self.order]
 
     # ---- reading progress (SQLite)
     def _db(self):
@@ -689,6 +694,10 @@ class Engine:
     def save_state(self):
         with self.lock:
             d = {"settings": self.settings,
+                 # The queue order is user-controlled now, so it has to survive
+                 # a restart separately from the jobs themselves.
+                 "order": [jid for jid in self.order
+                           if any(j.id == jid for j in self.jobs)],
                  "jobs": [asdict(j) for j in self.jobs]}
             tmp = STATE_FILE + ".tmp"
             try:
@@ -730,18 +739,25 @@ class Engine:
         and per-status counts. Built defensively — one bad job yields an error
         card rather than an empty queue."""
         with self.lock:
+            # Emit in run order, not insertion order: the queue is reorderable,
+            # so the position in this array is what the run order actually is.
+            order_index = {jid: i for i, jid in enumerate(self.order)}
             # One malformed job must not blank the whole UI. A summary that
             # throws is reported as an error card instead of killing the poll.
             jobs = []
-            for j in self.jobs:
+            for j in sorted(self.jobs,
+                            key=lambda j: order_index.get(j.id, len(order_index))):
                 try:
-                    jobs.append(j.summary())
+                    s = j.summary()
+                    s["pos"] = order_index.get(j.id, -1) + 1
+                    jobs.append(s)
                 except Exception as exc:  # noqa: BLE001
                     jobs.append({"id": getattr(j, "id", "?"), "status": "failed",
                                  "label": getattr(j, "label", "?"),
                                  "error": f"state error: {exc}", "n_items": 0,
                                  "total_bytes": 0, "done_bytes": 0,
-                                 "message": "", "skipped": 0})
+                                 "message": "", "skipped": 0,
+                                 "pos": order_index.get(getattr(j, "id", ""), -1) + 1})
             return {
                 "jobs": jobs,
                 "current": self.current,
@@ -832,6 +848,32 @@ class Engine:
             return
         self._worker = threading.Thread(target=self._run, daemon=True)
         self._worker.start()
+
+    def move_to(self, job_id: str, index: int) -> bool:
+        """Put a waiting job at `index` in the run order.
+
+        The index is clamped, not rejected: "move to bottom" from the last row
+        should be a no-op, not an error. Only work that has not started can be
+        reordered — promising a new position to a running download would be a
+        claim the file cannot honour.
+        """
+        with self.lock:
+            if job_id not in self.order:
+                return False
+            job = self.get(job_id)
+            if not job or job.status not in ("planned", "queued", "resume", "failed"):
+                return False
+            self.order.remove(job_id)
+            index = max(0, min(index, len(self.order)))
+            self.order.insert(index, job_id)
+            self.save_state()
+            return True
+
+    def move(self, job_id: str, delta: int) -> bool:
+        """Shift a waiting job by `delta` places, e.g. -1 for one step up."""
+        if job_id not in self.order:
+            return False
+        return self.move_to(job_id, self.order.index(job_id) + delta)
 
     def _next_queued(self):
         with self.lock:

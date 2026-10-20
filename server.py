@@ -44,7 +44,7 @@ ENGINE = engine.Engine()
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "HardlyReading/1.5.0"
+    server_version = "HardlyReading/1.6.0"
 
     def log_message(self, fmt, *args):
         pass  # quiet
@@ -286,7 +286,12 @@ class Handler(BaseHTTPRequestHandler):
                     entry={"outname": f["name"]},
                 ))
             items.sort(key=lambda x: (x["series"].lower(), x["name"] or ""))
-            return self._send(200, {"items": items, "count": len(items)})
+            # A missing folder is why a library can look empty when files do
+            # exist elsewhere; the UI says so instead of "nothing downloaded".
+            ddir = ENGINE.settings.get("download_dir") or ""
+            return self._send(200, {"items": items, "count": len(items),
+                                    "dir": ddir,
+                                    "dir_missing": not os.path.isdir(ddir)})
 
         if path == "/api/progress":
             key = (qs.get("key") or [""])[0]
@@ -384,6 +389,20 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, {"job": ENGINE.cancel(body.get("id") or "")})
             except Exception as e:  # noqa: BLE001
                 return self._send(400, {"error": str(e)})
+
+        if path == "/api/move":
+            # Two shapes: {id, index} jumps anywhere, {id, delta} shifts by one.
+            jid = body.get("id") or ""
+            try:
+                if "index" in body:
+                    ok = ENGINE.move_to(jid, int(body["index"]))
+                else:
+                    ok = ENGINE.move(jid, int(body.get("delta", 0)))
+            except (TypeError, ValueError):
+                return self._send(400, {"error": "index/delta must be a number"})
+            if not ok:
+                return self._send(409, {"error": "that job cannot be reordered"})
+            return self._send(200, {"ok": True})
 
         if path == "/api/remove":
             try:

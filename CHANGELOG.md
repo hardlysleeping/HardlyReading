@@ -3,6 +3,21 @@
 Notable changes to HardlyReading. Versions are tagged on GitHub with matching
 release notes.
 
+## [1.6.0] — 2026-10-20
+
+### Added
+
+- **You control the queue order.** Every waiting job has `⤒` top, `▲` up one,
+  `▼` down one and `⤓` bottom, plus a `#n` chip showing its real place in the run
+  order. The buttons disable at the ends instead of doing nothing. Order is saved
+  in `state.json` and survives a restart; only waiting work can be moved, because
+  reordering a download in flight would promise what the transfer cannot honour.
+- `POST /api/move` accepts `{id, index}` or `{id, delta}` and answers 409 for a
+  job that cannot be reordered.
+- The library's empty state now names the download folder, and says plainly when
+  that folder does not exist — an empty library and a missing folder are
+  different problems and used to look identical.
+
 ## [1.5.0] — 2026-10-20
 
 ### Fixed
@@ -112,6 +127,7 @@ First release.
 - Built-in CBZ / CBR / PDF reader; CBR needs `unrar`, `bsdtar` or `7z`
 - Cross-platform launcher that finds `aria2c` and opens the browser
 
+[1.6.0]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v1.6.0
 [1.5.0]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v1.5.0
 [1.4.0]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v1.4.0
 [1.3.0]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v1.3.0
