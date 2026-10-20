@@ -3,6 +3,28 @@
 Notable changes to HardlyReading. Versions are tagged on GitHub with matching
 release notes.
 
+## [1.5.0] — 2026-10-20
+
+### Fixed
+
+- **PDFs had no reading progress.** They were opened in the browser's built-in
+  viewer, which is a plugin: page script cannot read the current page, so there
+  was no position to save and no history entry. PDFs are now drawn by pdf.js on a
+  canvas — one page, fit to width, arrows or `←`/`→` — and every page turn writes
+  to the same SQLite table the CBZ reader uses.
+- **Page counts of zero.** `pdf_page_count()` required the file to start with
+  `%PDF`. One real upload begins with 259 bytes of a PHP error page, so a valid
+  52-page PDF reported no pages at all. The header is now located rather than
+  required at byte zero.
+
+### Changed
+
+- **The queue queues.** Adding a link starts downloading immediately. The file-plan
+  screen is now opt-in (`review_before_download`), off by default.
+- pdf.js 4.10.38 is vendored in `vendor/` (about 1.7 MB, Apache-2.0) instead of
+  loaded from a CDN, so the app works without internet beyond archive.org.
+  `/vendor/` is served with a realpath containment check.
+
 ## [1.4.0] — 2026-10-20
 
 ### Fixed
@@ -90,6 +112,7 @@ First release.
 - Built-in CBZ / CBR / PDF reader; CBR needs `unrar`, `bsdtar` or `7z`
 - Cross-platform launcher that finds `aria2c` and opens the browser
 
+[1.5.0]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v1.5.0
 [1.4.0]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v1.4.0
 [1.3.0]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v1.3.0
 [1.2.0]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v1.2.0
