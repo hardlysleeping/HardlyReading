@@ -1,4 +1,4 @@
-# HardlyReading
+# HardlyReader
 
 Desktop-friendly web app for grabbing magazines, comics and PDFs from
 [Internet Archive](https://archive.org) and reading them locally.
@@ -81,13 +81,13 @@ if anything is missing — it will not half-start.
 Files land in your downloads folder, under one subfolder per series:
 
 ```
-~/Downloads/HardlyReading/
+~/Downloads/HardlyReader/
 └── MAD Magazine/
     ├── MAD Magazine 179 (1976).cbz
     └── MAD Magazine 180 (1976).cbz
 ```
 
-Point Komga (or any comic server) at `~/Downloads/HardlyReading` and each
+Point Komga (or any comic server) at `~/Downloads/HardlyReader` and each
 subfolder becomes a series.
 
 ## The reader
@@ -104,8 +104,8 @@ in the same place whatever device or browser you open it from.
 
 | What | Windows | macOS | Linux |
 |---|---|---|---|
-| Settings & queue | `%APPDATA%\hardlyreading` | `~/Library/Application Support/hardlyreading` | `~/.config/hardlyreading` |
-| Downloads | `%USERPROFILE%\Downloads\HardlyReading` | `~/Downloads/HardlyReading` | `~/Downloads/HardlyReading` |
+| Settings & queue | `%APPDATA%\hardlyreader` | `~/Library/Application Support/hardlyreader` | `~/.config/hardlyreader` |
+| Downloads | `%USERPROFILE%\Downloads\HardlyReader` | `~/Downloads/HardlyReader` | `~/Downloads/HardlyReader` |
 
 ## Limitations
 
@@ -138,7 +138,7 @@ Worth knowing before you point it at a 500-issue collection:
 
 ## Skipping what you already have
 
-Before downloading a resolved collection, HardlyReading checks the destination
+Before downloading a resolved collection, HardlyReader checks the destination
 folder against archive.org's checksums and drops any file whose MD5 is already
 there — so re-running a grab, or grabbing an overlapping collection, only
 fetches what is actually missing. The checksum index is cached in

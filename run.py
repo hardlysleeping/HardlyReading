@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""HardlyReading launcher — the only file a normal user has to run.
+"""HardlyReader launcher — the only file a normal user has to run.
 
     python run.py          (or double-click run.py on Windows)
 
@@ -48,7 +48,7 @@ def check_python() -> None:
     sys.dont_write_bytecode = True
     if sys.version_info < MIN_PY:
         die(
-            f"HardlyReading needs Python {MIN_PY[0]}.{MIN_PY[1]} or newer "
+            f"HardlyReader needs Python {MIN_PY[0]}.{MIN_PY[1]} or newer "
             f"- this is {sys.version.split()[0]}.",
             "Install the current Python from https://python.org/downloads\n"
             "(on Windows, tick 'Add Python to PATH' during setup).",
@@ -104,12 +104,12 @@ def find_aria2() -> str:
                 return path
     # Nothing usable yet — offer to install it where the user can say yes.
     print()
-    print("  aria2 is the downloader HardlyReading uses. It isn't installed yet.")
+    print("  aria2 is the downloader HardlyReader uses. It isn't installed yet.")
     print()
     print("  " + install_hint().replace("\n", "\n  "))
     die("Downloads cannot start without aria2.",
         "Everything else (searching, browsing the archive) needs it too,\n"
-        "so please install it and run HardlyReading again.")
+        "so please install it and run HardlyReader again.")
 
 
 def check_port_free(host: str, port: int) -> int:
@@ -133,7 +133,7 @@ def main() -> None:
     port = check_port_free("127.0.0.1", 8788)
 
     print()
-    print("  HardlyReading")
+    print("  HardlyReader")
     print("  " + "-" * 40)
     print(f"  downloader : {aria2}")
     print(f"  address    : http://127.0.0.1:{port}")
@@ -156,5 +156,5 @@ if __name__ == "__main__":
         import traceback
         print()
         traceback.print_exc()
-        die(f"HardlyReading stopped unexpectedly: {exc}",
+        die(f"HardlyReader stopped unexpectedly: {exc}",
             "If this keeps happening, copy the text above into a bug report.")
