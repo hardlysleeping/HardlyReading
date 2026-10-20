@@ -98,7 +98,7 @@ def http_json(url: str, timeout: int = 60):
     """GET a URL and return parsed JSON. No retry here — callers that can
     recover (the resolver, the per-item probe) do their own attempts."""
 
-    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/1.4.0"})
+    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/1.4.1"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.load(r)
 
