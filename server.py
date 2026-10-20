@@ -299,6 +299,25 @@ class Handler(BaseHTTPRequestHandler):
                 ENGINE.kick()
             return self._send(200, {"paused": ENGINE.paused})
 
+        if path == "/api/cancel":
+            try:
+                return self._send(200, {"job": ENGINE.cancel(body.get("id") or "")})
+            except Exception as e:  # noqa: BLE001
+                return self._send(400, {"error": str(e)})
+
+        if path == "/api/remove":
+            try:
+                return self._send(200, ENGINE.remove(body.get("id") or ""))
+            except Exception as e:  # noqa: BLE001
+                return self._send(400, {"error": str(e)})
+
+        if path == "/api/delete":
+            try:
+                return self._send(200, ENGINE.delete_file(body.get("id") or "",
+                                                          body.get("file") or ""))
+            except Exception as e:  # noqa: BLE001
+                return self._send(400, {"error": str(e)})
+
         return self._send(404, {"error": "not found"})
 
 

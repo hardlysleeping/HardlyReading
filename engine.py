@@ -982,6 +982,64 @@ class Engine:
                 self.current = None
                 self.save_state()
 
+    def cancel(self, job_id):
+        """Mark a not-yet-downloading job cancelled so it never runs."""
+        with self.lock:
+            j = self.get(job_id)
+            if not j:
+                raise ValueError("no such job")
+            if j.status in ("downloading", "verifying", "resume"):
+                raise ValueError("that download is already running")
+            j.status = "cancelled"
+            j.message = "cancelled"
+            j.updated = time.time()
+            self.save_state()
+        return j.summary()
+
+    def remove(self, job_id):
+        """Dismiss a job from the list entirely; files on disk are untouched."""
+        with self.lock:
+            if not self.get(job_id):
+                raise ValueError("no such job")
+            self.jobs = [x for x in self.jobs if x.id != job_id]
+            self.order = [i for i in self.order if i != job_id]
+            if self.current == job_id:
+                self.current = None
+            self.save_state()
+        return {"removed": job_id}
+
+    def delete_file(self, job_id, filename):
+        """Delete one downloaded file, its entry, and its reading position."""
+        j = self.get(job_id)
+        if not j or not j.dir:
+            raise ValueError("no such job")
+        base = os.path.basename(filename)
+        target = os.path.realpath(os.path.join(j.dir, base))
+        if not target.startswith(os.path.realpath(j.dir)) or not os.path.isfile(target):
+            raise ValueError("no such file")
+        key = ""
+        with self.lock:
+            for e in j.items:
+                if e.get("outname") == base:
+                    key = book_key(e)
+                    e["skip"] = True   # drop from library without deleting the job
+            if key:
+                self._clear_progress(key)
+            self.save_state()
+        os.remove(target)
+        return {"deleted": base}
+
+    def _clear_progress(self, book_key):
+        c = self._db()
+        if not c:
+            return
+        try:
+            with self._lock_db:
+                c.execute("DELETE FROM progress WHERE book=?", (book_key,))
+                c.commit()
+        except Exception:  # noqa: BLE001
+            pass
+
 
 def _parse_speed(s: str) -> float:
     """aria2 prints speeds like 1.2MiB, 350KiB, 12B."""

@@ -153,6 +153,8 @@
   .rbar .t{font-size:13.5px;font-weight:600;overflow:hidden;
     text-overflow:ellipsis;white-space:nowrap}
   .rbar .sp{flex:1}
+  .rbar .brand{font-size:12px;font-weight:700;letter-spacing:.04em;
+    color:var(--accent,#3f7cf0);text-transform:lowercase;flex:none}
   .rbar button{background:var(--panel2);border:1px solid var(--line);
     color:var(--text);border-radius:7px;padding:6px 12px;font-size:13px}
   .rbar button:disabled{opacity:.35}
@@ -178,6 +180,9 @@
   .rfile .pg{font-size:12px;color:var(--dim);white-space:nowrap}
   .rfile.dis{opacity:.45;cursor:default}
   .rfile.dis:hover{border-color:var(--line)}
+  .libdel{background:transparent;border:none;color:var(--dim);font-size:14px;
+    cursor:pointer;padding:4px 8px;border-radius:6px}
+  .libdel:hover{color:#ff6b6b;background:rgba(255,107,107,.12)}
   .libgroup{font-size:12px;font-weight:700;color:var(--dim);
     text-transform:uppercase;letter-spacing:.06em;margin:16px 0 8px}
   .libgroup:first-child{margin-top:4px}
@@ -350,12 +355,20 @@ function renderJobs(st){
       // Refuse to start a grab that cannot fit, rather than filling the disk
       // halfway through and leaving a broken library behind.
       acts = `<button class="btn sm" data-confirm="${esc(j.id)}"
-                ${j.fits === false ? "disabled" : ""}>Download</button>`;
+                ${j.fits === false ? "disabled" : ""}>Download</button>`
+           + `<button class="btn ghost sm" data-cancel="${esc(j.id)}">Cancel</button>`;
+    } else if(j.status === "queued" || j.status === "resolving"){
+      acts = `<button class="btn ghost sm" data-cancel="${esc(j.id)}">Cancel</button>`;
     } else if(j.status === "done"){
       acts = `<button class="btn ghost sm" data-open="${esc(j.id)}">Open folder</button>`
            + `<button class="btn ghost sm" data-read="${esc(j.id)}">Read</button>`;
     } else if(j.status === "failed"){
       acts = `<button class="btn ghost sm" data-retry="${esc(j.id)}">Retry</button>`;
+    }
+    // Every card gets a dismiss, so a long session doesn't pile up dead jobs.
+    if(j.status !== "downloading" && j.status !== "verifying" && j.status !== "resume"){
+      acts += `<button class="btn ghost sm" data-remove="${esc(j.id)}"
+                      title="Remove from list">✕</button>`;
     }
     return `<div class="job">
       <div>
@@ -416,6 +429,30 @@ document.addEventListener("click", async (e)=>{
   const rd = e.target.closest("[data-read]");
   if(rd){
     openReader(rd.dataset.read);
+  }
+  const cc = e.target.closest("[data-cancel]");
+  if(cc){
+    cc.disabled = true;
+    try{
+      await api("/api/cancel", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({id: cc.dataset.cancel})
+      });
+      toast("Cancelled");
+      tick();
+    }catch(err){ toast(err.message); cc.disabled = false; }
+    return;
+  }
+  const rm = e.target.closest("[data-remove]");
+  if(rm){
+    if(!confirm("Remove this from the list? Files on disk are kept.")) return;
+    try{
+      await api("/api/remove", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({id: rm.dataset.remove})
+      });
+      tick();
+    }catch(err){ toast(err.message); }
   }
 });
 
@@ -658,6 +695,8 @@ function renderLibrary(){
         <span class="nm">${esc(it.name)}</span>
         ${badge}
         <span class="pg">${it.kind === "cbz" ? it.pages + " pages" : "PDF"}</span>
+        <button class="libdel" data-del-job="${esc(it.job)}" data-del-name="${esc(it.name)}"
+                title="Delete this file">✕</button>
       </div>`;
     }).join("")}
   `).join("");
@@ -666,6 +705,19 @@ function renderLibrary(){
     if(el.classList.contains("dis")) return;
     const it = libItems.find(x => x.key === el.dataset.key);
     el.onclick = () => openBook(it);
+  });
+  $("libList").querySelectorAll(".libdel").forEach(btn => {
+    btn.onclick = async (e) => {
+      e.stopPropagation();
+      if(!confirm("Delete this file from disk?")) return;
+      try{
+        await api("/api/delete", {
+          method:"POST", headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({id: btn.dataset.delJob, file: btn.dataset.delName})
+        });
+        loadLibrary();
+      }catch(err){ toast(err.message); }
+    };
   });
 }
 
@@ -734,6 +786,7 @@ async function openBook(item){
     const start = Math.max(1, (item.progress || 0) + 1);
     wrap.innerHTML = `
       <div class="rbar">
+        <span class="brand">hardlyreader</span>
         <span class="t">${esc(item.name)}</span>
         <span class="sp"></span>
         <span id="rpdfpage" class="muted"></span>
@@ -778,6 +831,7 @@ async function openBook(item){
 
   wrap.innerHTML = `
     <div class="rbar">
+      <span class="brand">hardlyreader</span>
       <span class="t">${esc(item.name)}</span>
       <span class="sp"></span>
       <button id="rprev">‹</button>
