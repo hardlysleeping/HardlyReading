@@ -7,7 +7,7 @@
 <style>
   :root{
     --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --line:#282e3a;
-    --text:#e8ecf3; --dim:#8b95a8; --accent:#4f8cff; --accent2:#7aa9ff;
+    --text:#e8ecf3; --dim:#98a3b8; --accent:#4f8cff; --accent2:#7aa9ff;
     --ok:#3ecf8e; --warn:#f0b429; --err:#ef5b5b; --radius:12px;
   }
   *{box-sizing:border-box}
@@ -159,7 +159,17 @@
     display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
   .res .y{font-size:11px;color:var(--dim);margin-top:3px}
 
-  .empty{color:var(--dim);font-size:13.5px;padding:22px 0;text-align:center}
+  .empty{color:var(--dim);font-size:13.5px;padding:26px 0;text-align:center;line-height:1.6}
+  .empty b{display:block;color:var(--text);opacity:.85;font-weight:550;font-size:14px}
+  .empty span{display:block;margin-top:2px}
+
+  /* loading spinner */
+  .spin{display:inline-block;width:14px;height:14px;border:2px solid var(--line);
+    border-top-color:var(--accent);border-radius:50%;animation:spin .7s linear infinite;
+    vertical-align:-2px;margin-right:8px}
+  .spin.lg{width:22px;height:22px;border-width:2.5px;margin-right:10px;vertical-align:-5px}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .results.busy{opacity:.45;transition:opacity .15s;pointer-events:none}
   .toast{
     position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(90px);
     background:var(--panel2);border:1px solid var(--line);border-radius:10px;
@@ -323,7 +333,7 @@ https://archive.org/search?query=…"></textarea>
 
     <div class="card">
       <h2>Queue</h2>
-      <div id="jobs"><div class="empty">Nothing queued yet.</div></div>
+      <div id="jobs"><div class="empty"><b>Nothing queued yet</b><span>Paste a link above to start.</span></div></div>
     </div>
   </div>
 
@@ -427,7 +437,7 @@ function renderJobs(st){
   const host = $("jobs");
   const jobs = (st.jobs||[]).slice().reverse();
   if(!jobs.length){
-    host.innerHTML = '<div class="empty">Nothing queued yet.</div>';
+    host.innerHTML = '<div class="empty"><b>Nothing queued yet</b><span>Paste a link above to start.</span></div>';
     return;
   }
   const html = jobs.map(j=>{
@@ -578,6 +588,12 @@ async function tick(){
 }
 
 /* ---------- actions ---------- */
+// Keep "Add to queue" honest: nothing to add means nothing to click.
+const pasteBox = $("paste"), addBtn = $("addBtn");
+function syncAddBtn(){ addBtn.disabled = !pasteBox.value.trim(); }
+pasteBox.addEventListener("input", syncAddBtn);
+syncAddBtn();
+
 $("addBtn").onclick = async ()=>{
   const box = $("paste");
   const urls = box.value.split("\n").map(s=>s.trim()).filter(Boolean);
@@ -599,7 +615,8 @@ $("addBtn").onclick = async ()=>{
   }catch(e){
     toast("Could not add: " + e.message);
   }finally{
-    btn.disabled = false; btn.textContent = "Add to queue";
+    btn.textContent = "Add to queue";
+    syncAddBtn();   // re-disable if the box was cleared
   }
 };
 
@@ -628,7 +645,15 @@ async function doSearch(){
 
 async function loadPage(){
   const btn = $("searchBtn");
-  btn.disabled = true; btn.textContent = "…";
+  btn.disabled = true; btn.textContent = "Searching…";
+  const host = $("results");
+  host.classList.add("busy");
+  // Nothing on screen yet (first search, or a fresh page) — show the spinner
+  // in place, otherwise dim what's there so the wait is visible either way.
+  if(!host.children.length){
+    host.innerHTML = '<div class="empty"><span class="spin lg"></span>Searching…</div>';
+  }
+  $("searchMeta").innerHTML = '<span class="spin"></span>Searching Internet Archive…';
   try{
     const params = new URLSearchParams({q: searchQ, page: String(searchPage)});
     params.set("filter", searchFilter);
@@ -697,7 +722,9 @@ async function loadPage(){
     }
   }catch(e){
     $("searchMeta").textContent = "Search failed: " + e.message;
+    host.innerHTML = `<div class="empty">Search failed: ${esc(e.message)}</div>`;
   }finally{
+    host.classList.remove("busy");
     btn.disabled = false; btn.textContent = "Search";
   }
 }
@@ -766,7 +793,7 @@ function renderLibrary(){
   if(!libItems.length){
     $("libMeta").textContent = "";
     $("libList").innerHTML =
-      '<div class="empty">Nothing downloaded yet. Anything you finish shows up here.</div>';
+      '<div class="empty"><b>Nothing downloaded yet</b><span>Anything you finish shows up here — try the Search tab.</span></div>';
     return;
   }
   const doneCount = libItems.filter(i => i.finished).length;

@@ -80,7 +80,10 @@ HISTORY_DB = os.environ.get("IA_HISTORY") or os.path.join(user_config_dir(), "hi
 # ---------------------------------------------------------------- http helpers
 
 def http_json(url: str, timeout: int = 60):
-    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/1.0.0"})
+    """GET a URL and return parsed JSON. No retry here — callers that can
+    recover (the resolver, the per-item probe) do their own attempts."""
+
+    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/1.1.0"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.load(r)
 
@@ -435,6 +438,12 @@ def probe_item(ident: str, count_members: bool = False) -> dict:
 
 
 def classify_many(idents, workers: int = 10):
+    """Probe many identifiers in parallel, keeping input order.
+
+    Returns one dict per identifier with `kind` of collection / bundle / single
+    (or `skip` plus a reason when the item has nothing we can download).
+    """
+
     from concurrent.futures import ThreadPoolExecutor as _TPE
     with _TPE(max_workers=workers) as ex:
         return list(ex.map(probe_item, idents))
@@ -700,6 +709,9 @@ class Engine:
         return None
 
     def snapshot(self):
+        """Everything the UI polls for: jobs, live job id, pause flag, settings
+        and per-status counts. Built defensively — one bad job yields an error
+        card rather than an empty queue."""
         with self.lock:
             # One malformed job must not blank the whole UI. A summary that
             # throws is reported as an error card instead of killing the poll.
@@ -752,6 +764,8 @@ class Engine:
         return None
 
     def _run(self):
+        """Worker loop: take the next due job, process or resume it, sleep
+        between jobs. Exits when nothing is queued or scheduled for retry."""
         while True:
             if self.paused:
                 time.sleep(0.5)
@@ -1087,6 +1101,10 @@ RETRY_LADDER = (15 * 60, 60 * 60, 3 * 60 * 60, 8 * 60 * 60)
 
 
 def next_retry_delay(attempt: int) -> float:
+    """Backoff for a failed download attempt: 15m, 1h, 3h, then 8h and it stays
+    there. Whether to keep retrying is decided separately by failure_is_fatal()
+    — long waits are deliberate, archive.org outages run for hours."""
+
     if attempt < len(RETRY_LADDER):
         return RETRY_LADDER[attempt]
     return RETRY_LADDER[-1]
