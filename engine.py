@@ -98,7 +98,7 @@ def http_json(url: str, timeout: int = 60):
     """GET a URL and return parsed JSON. No retry here — callers that can
     recover (the resolver, the per-item probe) do their own attempts."""
 
-    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/1.3.0"})
+    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/1.4.0"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.load(r)
 
@@ -937,6 +937,19 @@ class Engine:
 
             job.items = ok + skipped
             job.total_bytes = sum(i.get("size", 0) for i in ok)
+
+            # Nothing left to fetch — every entry is already on disk, or none
+            # was downloadable. Offering a Download button for zero files is a
+            # dead end, so finish the job instead of waiting for a confirm.
+            if not ok:
+                job.status = "done"
+                job.message = (f"already have all {len(skipped)} item(s)"
+                               if skipped else "nothing to download")
+                job.updated = time.time()
+                with self.lock:
+                    self.save_state()
+                return
+
             # Known now, not at download time, so the plan screen can show the
             # destination and warn about free space before anything starts.
             job.status = "planned"
@@ -1155,6 +1168,17 @@ class Engine:
                 c.commit()
         except Exception:  # noqa: BLE001
             pass
+
+    def clear_history(self):
+        """Forget every saved reading position. Files on disk are untouched."""
+        c = self._db()
+        if not c:
+            return {"cleared": 0}
+        with self._lock_db:
+            n = c.execute("SELECT COUNT(*) FROM progress").fetchone()[0]
+            c.execute("DELETE FROM progress")
+            c.commit()
+        return {"cleared": n}
 
 
 def _parse_speed(s: str) -> float:

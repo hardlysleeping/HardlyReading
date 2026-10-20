@@ -268,8 +268,15 @@
     background:var(--panel2);border:1px solid var(--line);border-radius:9px;
     margin-bottom:8px;cursor:pointer}
   .rfile:hover{border-color:var(--accent)}
-  .rfile .nm{flex:1;font-size:13.5px;overflow:hidden;
+  .rfile .nm{display:block;font-size:13.5px;overflow:hidden;
     text-overflow:ellipsis;white-space:nowrap}
+  .rlinfo{flex:1;min-width:0}
+  .rltrack{height:3px;background:#0b0d11;border-radius:2px;margin-top:6px;overflow:hidden}
+  .rltrack i{display:block;height:100%;background:var(--accent);border-radius:2px;
+    transition:width .3s ease}
+  .rltrack i.fin{background:var(--ok)}
+  .rfile.done{opacity:.62}
+  .rfile.done:hover{opacity:1}
   .rfile .pg{font-size:12px;color:var(--dim);white-space:nowrap}
   .rfile.dis{opacity:.45;cursor:default}
   .rfile.dis:hover{border-color:var(--line)}
@@ -316,6 +323,10 @@
           <span><b>Show "reader" label</b>
             <em>Small brand mark in the reader header</em></span>
         </label>
+        <div class="row" style="margin:2px 0 4px">
+          <button class="btn ghost sm" id="clearHistory">Clear reading history</button>
+          <span class="hint" style="margin:0">Forgets every saved position. Files stay.</span>
+        </div>
 
         <div class="sgroup">Downloads</div>
         <label class="rowchk">
@@ -520,11 +531,18 @@ function renderJobs(st){
       ? `<div class="scoped">${esc(j.scoped_query)}</div>` : "";
     let acts = "";
     if(j.status === "planned"){
-      // Refuse to start a grab that cannot fit, rather than filling the disk
-      // halfway through and leaving a broken library behind.
-      acts = `<button class="btn sm" data-confirm="${esc(j.id)}"
-                ${j.fits === false ? "disabled" : ""}>Download</button>`
-           + `<button class="btn ghost sm" data-cancel="${esc(j.id)}">Cancel</button>`;
+      // Guard against stale state from before the engine stopped planning
+      // empty jobs: nothing to fetch means no Download button.
+      const ready = (j.n_items || 0) - (j.skipped || 0);
+      if(ready <= 0){
+        acts = `<span class="hint" style="margin:0">Nothing to download</span>`;
+      } else {
+        // Refuse to start a grab that cannot fit, rather than filling the disk
+        // halfway through and leaving a broken library behind.
+        acts = `<button class="btn sm" data-confirm="${esc(j.id)}"
+                  ${j.fits === false ? "disabled" : ""}>Download</button>`
+             + `<button class="btn ghost sm" data-cancel="${esc(j.id)}">Cancel</button>`;
+      }
     } else if(j.status === "queued" || j.status === "resolving"){
       acts = `<button class="btn ghost sm" data-cancel="${esc(j.id)}">Cancel</button>`;
     } else if(j.status === "done"){
@@ -1033,17 +1051,25 @@ function renderLibrary(){
   $("libList").innerHTML = Object.keys(groups).sort().map(se => `
     <div class="libgroup">${esc(se)}</div>
     ${groups[se].map(it => {
-      const pct = it.pages ? Math.round(((it.progress||0) / it.pages) * 100) : 0;
+      const pct = it.pages ? Math.min(100, Math.round(((it.progress||0) / it.pages) * 100)) : 0;
       const badge = it.finished
         ? '<span class="libfin">finished</span>'
-        : (it.progress ? `<span class="libpg">${it.progress}/${it.pages}</span>` : "");
+        : (it.progress ? `<span class="libpg">${it.progress}/${it.pages} · ${pct}%</span>` : "");
+      // Progress bar only once you've started reading, so unread rows stay quiet.
+      const bar = (it.progress && it.pages)
+        ? `<div class="rltrack"><i class="${it.finished?"fin":""}" style="width:${pct}%"></i></div>`
+        : "";
       const on = libSelected.has(it.key) ? " sel" : "";
       // Deleting is a deliberate act: only offered once Select is on.
       const tick = libSelectMode ? `<span class="libtick${on ? " on" : ""}">✓</span>` : "";
-      return `<div class="rfile${it.readable?"":" dis"}${on}" data-key="${esc(it.key)}"
+      const fin = it.finished ? " done" : "";
+      return `<div class="rfile${it.readable?"":" dis"}${on}${fin}" data-key="${esc(it.key)}"
                    data-job="${esc(it.job)}" data-name="${esc(it.name)}">
         ${tick}
-        <span class="nm">${esc(it.name)}</span>
+        <div class="rlinfo">
+          <span class="nm">${esc(it.name)}</span>
+          ${bar}
+        </div>
         ${badge}
         <span class="pg">${it.kind === "cbz" ? it.pages + " pages" : "PDF"}</span>
       </div>`;
@@ -1350,6 +1376,22 @@ function openSettings(){
 function closeSettings(){ $("settingsModal").hidden = true; }
 
 $("gearBtn").onclick = openSettings;
+$("clearHistory").onclick = async ()=>{
+  if(!confirm("Forget every saved reading position?\n\nDownloaded files are not touched — only the page you were on.")) return;
+  const btn = $("clearHistory");
+  btn.disabled = true; btn.textContent = "Clearing…";
+  try{
+    const r = await api("/api/clear-history", {method:"POST",
+      headers:{"Content-Type":"application/json"}, body:"{}"});
+    toast(r.cleared ? `Cleared ${r.cleared} reading position${r.cleared===1?"":"s"}`
+                    : "Nothing to clear");
+    if($("view-library").style.display !== "none") loadLibrary();
+  }catch(e){
+    toast("Could not clear: " + e.message);
+  }finally{
+    btn.disabled = false; btn.textContent = "Clear reading history";
+  }
+};
 $("settingsClose").onclick = closeSettings;
 $("settingsDone").onclick = closeSettings;
 $("settingsModal").addEventListener("click", (e)=>{

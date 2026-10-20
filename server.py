@@ -44,7 +44,7 @@ ENGINE = engine.Engine()
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "HardlyReading/1.3.0"
+    server_version = "HardlyReading/1.4.0"
 
     def log_message(self, fmt, *args):
         pass  # quiet
@@ -368,6 +368,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, ENGINE.remove(body.get("id") or ""))
             except Exception as e:  # noqa: BLE001
                 return self._send(400, {"error": str(e)})
+
+        if path == "/api/clear-history":
+            try:
+                return self._send(200, ENGINE.clear_history())
+            except Exception as e:  # noqa: BLE001
+                return self._send(500, {"error": str(e)})
 
         if path == "/api/delete":
             try:

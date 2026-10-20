@@ -164,6 +164,11 @@ download from an earlier run, or one you copied in by hand, still appears after
 a restart or after you remove the job that fetched it. Removing a job from the
 queue never hides the file it already downloaded.
 
+Each row shows how far you have read: a progress bar and `page/total · percent`
+once you have started, and a dimmed row with a `finished` badge when you reach
+the end. **Clear reading history** in Settings forgets every saved position —
+files are untouched.
+
 Files land in your downloads folder, under one subfolder per series:
 
 ```
@@ -194,6 +199,7 @@ The gear in the header opens a panel; changes save as you edit and persist in
 | Setting | Default | What it does |
 |---|---|---|
 | Show "reader" label | on | The small label in the reader header. Off gives a clean page. |
+| Clear reading history | — | Forgets every saved page position. Files stay on disk. |
 | Ask before downloading | on | Show the file plan and total size, then wait for you. |
 | Skip files I already have | on | Drop entries whose checksum is already in the folder. |
 | Komga folder naming | on | One folder per series with issue-ordered filenames. Off keeps archive.org's original filenames in a folder named after the link. |
