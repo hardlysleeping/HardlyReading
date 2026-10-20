@@ -158,11 +158,15 @@ select mode without deleting anything.
 
 ### The library reads the folder, not just the queue
 
-The Library lists what is actually in your download folder. Files are matched
-against the queue first, then the folder is scanned for anything else — so a
-download from an earlier run, or one you copied in by hand, still appears after
-a restart or after you remove the job that fetched it. Removing a job from the
-queue never hides the file it already downloaded.
+The Library lists what is actually in your **download folder** — the one set in
+Settings, default `~/Downloads/HardlyReading`, including its series subfolders.
+Files are matched against the queue first, then the folder is scanned for
+anything else, so a download from an earlier run, a file you copied in by hand,
+or a leftover after removing the job that fetched it all still appear and open.
+
+Downloads go into that same folder, one subfolder per series. Change the
+download folder in Settings and the Library follows it; it does not look
+anywhere else on disk.
 
 Each row shows how far you have read: a progress bar and `page/total · percent`
 once you have started, and a dimmed row with a `finished` badge when you reach
@@ -259,6 +263,10 @@ fetches what is actually missing. The checksum index is cached in
 Internet Archive hosts material under a wide range of rights. Downloading
 something does not give you the right to redistribute it. Check what you are
 downloading.
+
+## Changelog
+
+What changed in each release: [CHANGELOG.md](CHANGELOG.md).
 
 ## License
 
