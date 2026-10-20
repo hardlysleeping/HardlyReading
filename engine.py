@@ -98,7 +98,7 @@ def http_json(url: str, timeout: int = 60):
     """GET a URL and return parsed JSON. No retry here — callers that can
     recover (the resolver, the per-item probe) do their own attempts."""
 
-    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/1.4.1"})
+    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/1.5.0"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.load(r)
 
@@ -577,7 +577,9 @@ class Engine:
             "download_dir": default_download_dir(),
             "jobs_in_flight": 12,
             "between_jobs": 30,
-            "preview": True,
+            # Off by default: adding to the queue starts downloading. Turn it
+            # on if you want to see the file plan and size before anything runs.
+            "review_before_download": False,
             "komga_naming": True,
             # Skip anything whose checksum already exists in the destination.
             "skip_existing": True,
@@ -959,8 +961,8 @@ class Engine:
             with self.lock:
                 self.save_state()
 
-            if self.settings.get("preview", True):
-                return  # wait for the user to confirm on the plan screen
+            if self.settings.get("review_before_download", False):
+                return  # opt-in: wait for the user to confirm on the plan screen
             self._download(job, ok)
         except Exception as e:  # noqa: BLE001
             job.status = "failed"
@@ -1900,15 +1902,20 @@ def pdf_page_count(path: str) -> int:
 
     Counts `/Type /Page` objects, which is what every PDF writer emits, and
     falls back to `/Count` from the page tree root. Compressed object streams
-    (PDF 1.5+) would hide both, so this returns 0 rather than guessing when
-    neither matches; the reader still works, it just shows no total.
+    (PDF 1.5+) hide both, so this returns 0 rather than guessing when neither
+    matches; pdf.js reports the true number in the reader and that total is
+    saved with the reading position.
+
+    The header is located rather than required at byte 0: uploads carry junk
+    before it (a PHP error page, a BOM) and such a file is still a valid PDF.
     """
     try:
         with open(path, "rb") as fh:
+            if b"%PDF" not in fh.read(4096):
+                return 0
+            fh.seek(0)
             data = fh.read()
     except OSError:
-        return 0
-    if not data.startswith(b"%PDF"):
         return 0
     n = len(re.findall(rb"/Type\s*/Page[^s]", data))
     if n:

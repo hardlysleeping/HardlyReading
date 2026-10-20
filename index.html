@@ -251,6 +251,9 @@
   .rbar button{background:var(--panel2);border:1px solid var(--line);
     color:var(--text);border-radius:7px;padding:6px 12px;font-size:13px}
   .rbar button:disabled{opacity:.35}
+  .pdfhost{flex:1;overflow:auto;background:#0b0d11;display:flex;
+    justify-content:center;align-items:flex-start;padding:12px}
+  .pdfhost canvas{box-shadow:0 4px 24px rgba(0,0,0,.5);background:#fff}
   .rstage{flex:1;min-height:0;overflow:auto;display:flex;
     align-items:center;justify-content:center;padding:20px}
   /* Fit the whole page in the viewport with margins. `max-height` on a flex
@@ -331,8 +334,8 @@
         <div class="sgroup">Downloads</div>
         <label class="rowchk">
           <input type="checkbox" id="set_preview">
-          <span><b>Ask before downloading</b>
-            <em>Show the size and folder, then wait for you</em></span>
+          <span><b>Review before downloading</b>
+            <em>Off: the queue starts on its own. On: show the size and folder first.</em></span>
         </label>
         <label class="rowchk">
           <input type="checkbox" id="set_skip_existing">
@@ -1189,7 +1192,126 @@ function hideReader(){
   const r = $("reader");
   if(r) r.remove();
   document.removeEventListener("keydown", readerKeys);
+  // The PDF viewer keeps its own key handler and document handle; dropping the
+  // handle lets pdf.js release the worker for the next file.
+  if(pdfKeys) document.removeEventListener("keydown", pdfKeys);
+  pdfKeys = null;
+  if(pdfState && pdfState.doc) { try { pdfState.doc.destroy(); } catch(e){} }
+  pdfState = null;
   readerState = null;
+}
+
+// PDF viewer on pdf.js. Kept deliberately small: one page on a canvas, fit to
+// width, arrows to turn. Its job is a preview plus an honest page position,
+// not a full document experience.
+let pdfState = null;
+let pdfKeys = null;
+
+async function openPdf(item, wrap, qs){
+  wrap.innerHTML = `
+    <div class="rbar">
+      ${brandHtml()}
+      <span class="t">${esc(item.name)}</span>
+      <span class="sp"></span>
+      <button id="rprev" title="Previous page">‹</button>
+      <span id="rpdfpage" class="muted">opening…</span>
+      <button id="rnext" title="Next page">›</button>
+      <button id="rclose">Close</button>
+    </div>
+    <div class="pdfhost" id="pdfhost"><canvas id="pdfcanvas"></canvas></div>`;
+  document.body.appendChild(wrap);
+
+  const state = { page: Math.max(0, item.progress || 0), total: 0, doc: null,
+                  busy: false, item };
+  pdfState = state;
+
+  try{
+    const pdfjs = await import("/vendor/pdf.min.mjs");
+    pdfjs.GlobalWorkerOptions.workerSrc = "/vendor/pdf.worker.min.mjs";
+    state.doc = await pdfjs.getDocument({ url: "/api/book?" + qs }).promise;
+  }catch(e){
+    const el = $("rpdfpage");
+    if(el) el.textContent = "could not open";
+    toast("PDF failed to open: " + e.message);
+    $("rclose").onclick = hideReader;
+    return;
+  }
+
+  state.total = state.doc.numPages;
+  if(state.page > state.total - 1) state.page = state.total - 1;
+
+  async function draw(){
+    if(!state.doc || state.busy) return;
+    state.busy = true;
+    try{
+      const page = await state.doc.getPage(state.page + 1);
+      const host = $("pdfhost");
+      const canvas = $("pdfcanvas");
+      if(!host || !canvas) return;
+      // Fit the page to the pane width; tall pages scroll instead of shrinking
+      // to an unreadable thumbnail.
+      const avail = Math.max(240, host.clientWidth - 24);
+      const base = page.getViewport({ scale: 1 });
+      const vp = page.getViewport({ scale: avail / base.width });
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = Math.floor(vp.width * dpr);
+      canvas.height = Math.floor(vp.height * dpr);
+      canvas.style.width = vp.width + "px";
+      canvas.style.height = vp.height + "px";
+      const ctx = canvas.getContext("2d");
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      await page.render({ canvasContext: ctx, viewport: vp }).promise;
+      const el = $("rpdfpage");
+      if(el) el.textContent = `${state.page + 1} / ${state.total}`;
+      const prev = $("rprev"), next = $("rnext");
+      if(prev) prev.disabled = state.page <= 0;
+      if(next) next.disabled = state.page >= state.total - 1;
+    }catch(e){
+      // A failed render leaves the previous page up; the toolbar still works.
+    }finally{
+      state.busy = false;
+    }
+  }
+
+  function go(n){
+    if(!state.total) return;
+    state.page = Math.max(0, Math.min(state.total - 1, n));
+    draw();
+    // Same table the CBZ reader writes to, so history is one list, not two.
+    clearTimeout(saveTimer);
+    const s = state;
+    saveTimer = setTimeout(()=>{
+      api("/api/progress", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ key: item.key, page: s.page, total: s.total })
+      }).catch(()=>{});
+      const it = libItems.find(x => x.key === item.key);
+      if(it){ it.progress = s.page;
+              it.finished = s.total > 0 && s.page >= s.total - 1; }
+    }, 400);
+  }
+
+  pdfKeys = (e)=>{
+    if(!pdfState) return;
+    if(e.key === "ArrowRight" || e.key === " " || e.key === "PageDown"){
+      e.preventDefault(); go(pdfState.page + 1);
+    }else if(e.key === "ArrowLeft" || e.key === "PageUp"){
+      e.preventDefault(); go(pdfState.page - 1);
+    }else if(e.key === "Escape"){ hideReader(); }
+  };
+  document.addEventListener("keydown", pdfKeys);
+
+  $("rprev").onclick = ()=> go(state.page - 1);
+  $("rnext").onclick = ()=> go(state.page + 1);
+  $("rclose").onclick = hideReader;
+
+  // Redraw at the new width; debounced so a drag does not queue renders.
+  let rz = null;
+  const onResize = ()=>{ clearTimeout(rz); rz = setTimeout(draw, 150); };
+  window.addEventListener("resize", onResize);
+  wrap.addEventListener("remove", ()=> window.removeEventListener("resize", onResize));
+
+  draw();
 }
 
 async function openBook(item){
@@ -1199,43 +1321,12 @@ async function openBook(item){
 
   const qs = `id=${encodeURIComponent(item.job)}&file=${encodeURIComponent(item.name)}`;
 
-  // PDFs are handed to the browser's own viewer — no server-side renderer.
-  // The page number is read from the viewer's `#page=` fragment as it changes,
-  // so position still lands in the same server-side table CBZ pages use.
+  // PDFs are drawn by the bundled pdf.js rather than handed to the browser's
+  // own viewer. The native viewer is a plugin: page script cannot read which
+  // page is on screen, so there would be no reading history to save. pdf.js
+  // also reports the true page count, which the server only estimates.
   if(item.kind === "pdf"){
-    const start = Math.max(1, (item.progress || 0) + 1);
-    wrap.innerHTML = `
-      <div class="rbar">
-        ${brandHtml()}
-        <span class="t">${esc(item.name)}</span>
-        <span class="sp"></span>
-        <span id="rpdfpage" class="muted"></span>
-        <button id="rclose">Close</button>
-      </div>
-      <iframe id="rpdf" src="/api/book?${qs}#page=${start}&zoom=page-width"
-              style="flex:1;border:0;width:100%"></iframe>`;
-    document.body.appendChild(wrap);
-
-    let last = [];
-    const poll = setInterval(() => {
-      const f = $("rpdf");
-      if(!f || !f.contentWindow) return;
-      let p = null, n = null;
-      try{
-        const loc = f.contentWindow.location.hash || "";
-        const m = /page=(\d+)/.exec(loc);
-        if(m) p = parseInt(m[1], 10) - 1;
-        // Chrome's built-in viewer is a plugin, so the hash is the only signal.
-      }catch(e){ /* cross-origin guards the hash; ignore */ }
-      if(p !== null && (!last.length || last[0] !== p)){
-        last = [p, n];
-        const el = $("rpdfpage");
-        if(el) el.textContent = n ? `${p + 1} / ${n}` : `page ${p + 1}`;
-        api("/api/progress", {key: item.key, page: p, total: n || 0}).catch(()=>{});
-      }
-    }, 1500);
-    $("rclose").onclick = () => { clearInterval(poll); hideReader(); };
-    return;
+    return openPdf(item, wrap, qs);
   }
 
   let meta;
@@ -1316,7 +1407,7 @@ function paintPage(){
 /* ---------- settings ---------- */
 const SETTING_FIELDS = {
   show_brand:      {id:"set_show_brand",      type:"bool",  def:true},
-  preview:         {id:"set_preview",         type:"bool",  def:true},
+  review_before_download:{id:"set_preview",   type:"bool",  def:false},
   skip_existing:   {id:"set_skip_existing",   type:"bool",  def:true},
   komga_naming:    {id:"set_komga_naming",    type:"bool",  def:true},
   download_dir:    {id:"set_download_dir",    type:"str",   def:""},

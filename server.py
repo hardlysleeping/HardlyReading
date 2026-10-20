@@ -44,7 +44,7 @@ ENGINE = engine.Engine()
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "HardlyReading/1.4.1"
+    server_version = "HardlyReading/1.5.0"
 
     def log_message(self, fmt, *args):
         pass  # quiet
@@ -67,6 +67,25 @@ class Handler(BaseHTTPRequestHandler):
         try:
             with open(p, "rb") as fh:
                 self._send(200, fh.read(), "text/html; charset=utf-8")
+        except OSError:
+            self._send(404, "not found", "text/plain")
+
+    def _vendor(self, rel):
+        """Serve the bundled pdf.js module and its worker.
+
+        Vendored rather than pulled from a CDN: the app is local-first and has
+        to work with no internet beyond archive.org itself. The path is pinned
+        to the vendor directory so a crafted URL cannot walk out of it.
+        """
+        root = os.path.realpath(os.path.join(HERE, "vendor"))
+        p = os.path.realpath(os.path.join(root, rel.lstrip("/")))
+        if not p.startswith(root + os.sep) or not os.path.isfile(p):
+            return self._send(404, "not found", "text/plain")
+        ctype = ("text/javascript; charset=utf-8" if p.endswith((".mjs", ".js"))
+                 else "application/octet-stream")
+        try:
+            with open(p, "rb") as fh:
+                self._send(200, fh.read(), ctype)
         except OSError:
             self._send(404, "not found", "text/plain")
 
@@ -139,6 +158,9 @@ class Handler(BaseHTTPRequestHandler):
 
         if path in ("/", "/index.html"):
             return self._html("index.html")
+
+        if path.startswith("/vendor/"):
+            return self._vendor(path[len("/vendor/"):])
 
         if path == "/api/state":
             return self._send(200, ENGINE.snapshot())

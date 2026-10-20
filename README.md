@@ -189,7 +189,9 @@ subfolder becomes a series.
 
 Deliberately minimal: one page at a time, fitted to the window, `←`/`→` or the
 arrow buttons to turn, `Esc` to close. CBZ pages are read straight out of the zip
-by the server; PDFs are handed to your browser's own viewer.
+by the server. PDFs are drawn by [pdf.js](https://mozilla.github.io/pdf.js/),
+bundled in `vendor/` (about 1.7 MB, Apache-2.0) rather than loaded from a CDN, so
+the app works offline apart from archive.org itself.
 
 Reading position is stored in SQLite on the machine running the app
 (`history.db`), keyed by the archive.org identifier — so the same book resumes
@@ -242,10 +244,10 @@ Worth knowing before you point it at a 500-issue collection:
 - **CBR needs a RAR extractor.** CBZ is read with the Python stdlib; CBR is RAR,
   so reading one requires `unrar`, `bsdtar`, or `7z` on PATH. Without one, CBR
   files still download and are named correctly — they just aren't readable in-app.
-- **PDF page progress is best-effort.** CBZ/CBR position is tracked server-side
-  and follows you between devices. PDFs are shown in the browser's own viewer,
-  which does not reliably expose the current page, so a PDF's position may not
-  survive a reload.
+- **PDF page counts can be wrong before you open a file.** The list is built
+  without a rendering library, by counting page objects in the file; PDFs that
+  compress their object streams report nothing until pdf.js opens them and
+  records the real total with your position.
 - **Tested on Linux.** `run.py` handles Windows and macOS paths, the `aria2c.exe`
   lookup and the winget fallback, but has not been run on those platforms — treat
   them as untested rather than supported.
