@@ -256,7 +256,7 @@
         <div class="sgroup">Reader</div>
         <label class="rowchk">
           <input type="checkbox" id="set_show_brand">
-          <span><b>Show "hardlyreader" label</b>
+          <span><b>Show "reader" label</b>
             <em>Small brand mark in the reader header</em></span>
         </label>
 
@@ -825,7 +825,7 @@ let readerState = null;
 // full-bleed page can turn it off in Settings.
 function brandHtml(){
   const s = (lastState && lastState.settings) || {};
-  return s.show_brand === false ? "" : '<span class="brand">hardlyreader</span>';
+  return s.show_brand === false ? "" : '<span class="brand">reader</span>';
 }
 
 async function openReader(jobId){
