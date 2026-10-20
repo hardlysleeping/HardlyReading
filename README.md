@@ -117,12 +117,41 @@ if anything is missing — it will not half-start.
 ## Using it
 
 1. **Paste links** into the box on the Downloads tab, or search archive.org in the
-   Search tab and add results.
+   Search tab, tick the results you want, and press **Add to queue**.
 2. A **Ready** card appears showing how many items and how much disk it needs.
    Download is disabled if the grab will not fit.
 3. Press **Download**. Progress, speed and current file update live.
 4. When it finishes, **Read** opens it in the built-in reader, or **Open folder**
    shows the files.
+
+### Searching and picking
+
+Search results are **ticked, not added on click** — click a card to select it,
+then use the bar that appears to queue the whole selection at once. Nothing is
+queued until you say so.
+
+Each card carries a badge once that item is known to the queue, with a different
+symbol per state:
+
+| Symbol | State |
+|---|---|
+| `✓ in library` | Downloaded and verified |
+| `◷ queued` / `◷ ready` / `◷ resuming` | Waiting or planned |
+| `↓ downloading` | Transferring now |
+| `◌ resolving` / `◌ verifying` | Looking it up or checking the checksum |
+| `✕ failed` | Gave up — see the queue card for why |
+| `– cancelled` / `– unavailable` | Cancelled, or nothing downloadable in that item |
+
+A queued card offers **Remove from queue**; a downloaded card offers
+**Open in library**, which jumps to the file and highlights it. Deleting a
+downloaded file only happens in the Library, never from search.
+
+### Deleting from the library
+
+Deleting is deliberately not an always-visible button. Press **Select** in the
+Library, tick the files you want gone, then **Delete** — it confirms with the
+list of filenames before touching disk. Press **Cancel** or **Done** to leave
+select mode without deleting anything.
 
 Files land in your downloads folder, under one subfolder per series:
 

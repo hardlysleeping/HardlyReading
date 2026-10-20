@@ -98,7 +98,7 @@ def http_json(url: str, timeout: int = 60):
     """GET a URL and return parsed JSON. No retry here — callers that can
     recover (the resolver, the per-item probe) do their own attempts."""
 
-    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/1.1.0"})
+    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/1.2.0"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.load(r)
 
@@ -756,6 +756,33 @@ class Engine:
             }
 
     # ---- worker
+    def covered(self):
+        """Map archive identifier -> queue state, for the search grid.
+
+        The UI needs to know before you click a card whether that item is
+        already queued, downloading or sitting in the library. Identifiers only
+        exist once a job has resolved, so this walks resolved entries.
+        """
+        out = {}
+        with self.lock:
+            for j in self.jobs:
+                for e in j.items:
+                    ident = e.get("identifier")
+                    if not ident:
+                        continue
+                    prev = out.get(ident)
+                    # A finished job outranks an older cancelled one for the
+                    # same item, otherwise the badge flickers between visits.
+                    if prev and prev["status"] == "done":
+                        continue
+                    out[ident] = {
+                        "job": j.id,
+                        "status": j.status,
+                        "file": e.get("outname") or "",
+                        "skip": bool(e.get("skip")),
+                    }
+        return out
+
     def kick(self):
         if self._worker and self._worker.is_alive():
             return

@@ -147,6 +147,15 @@
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .jright{display:flex;flex-direction:column;align-items:flex-end;gap:8px}
   .btn.sm{padding:7px 14px;font-size:13px;border-radius:8px}
+  .btn.danger{background:rgba(239,91,91,.12);border:1px solid rgba(239,91,91,.45);color:#ff8f8f}
+  .btn.danger:hover{background:rgba(239,91,91,.2)}
+
+  /* selection bar, shared by search and library */
+  .selbar{display:flex;align-items:center;gap:10px;margin-top:12px;padding:9px 12px;
+    background:rgba(79,140,255,.09);border:1px solid rgba(79,140,255,.3);
+    border-radius:10px;font-size:13px;color:var(--accent2)}
+  .selbar[hidden]{display:none}
+  .selbar .sp{flex:1}
   .job .meta{font-size:12.5px;color:var(--dim);display:flex;gap:10px;flex-wrap:wrap}
   .job .scoped{font-size:11.5px;color:#5f6b80;margin-top:5px;
     font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
@@ -166,9 +175,27 @@
 
   /* results grid */
   .results{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-top:14px}
-  .res{background:var(--panel2);border:1px solid var(--line);border-radius:10px;
+  .res{position:relative;background:var(--panel2);border:1px solid var(--line);border-radius:10px;
     overflow:hidden;cursor:pointer;transition:border-color .15s,transform .1s}
   .res:hover{border-color:var(--accent);transform:translateY(-1px)}
+  .res.sel{border-color:var(--accent);box-shadow:0 0 0 2px rgba(79,140,255,.35)}
+  .res .tick{position:absolute;top:7px;left:7px;width:20px;height:20px;border-radius:50%;
+    background:rgba(10,12,16,.75);border:1px solid var(--line);display:grid;place-items:center;
+    font-size:11px;color:transparent;transition:background .12s}
+  .res.sel .tick{background:var(--accent);border-color:var(--accent);color:#fff}
+  .res .st{position:absolute;top:7px;right:7px;font-size:10.5px;font-weight:650;
+    padding:3px 7px;border-radius:999px;background:rgba(10,12,16,.85);
+    border:1px solid var(--line);white-space:nowrap}
+  .res .st.done{color:var(--ok);border-color:rgba(62,207,142,.45)}
+  .res .st.busy{color:var(--accent2);border-color:rgba(79,140,255,.45)}
+  .res .st.wait{color:var(--warn);border-color:rgba(240,180,41,.45)}
+  .res .st.fail{color:var(--err);border-color:rgba(239,91,91,.45)}
+  .res .st.off{color:var(--dim)}
+  .res .acts{display:flex;gap:6px;padding:0 9px 9px}
+  .res .acts button{flex:1;background:var(--panel);border:1px solid var(--line);
+    color:var(--dim);border-radius:7px;font-size:11px;padding:5px 0;cursor:pointer}
+  .res .acts button:hover{color:var(--text);border-color:var(--accent)}
+  .res .acts button.danger:hover{color:var(--err);border-color:var(--err)}
   .res img{width:100%;height:110px;object-fit:cover;display:block;background:#0b0d11}
   .res .body{padding:9px 10px 11px}
   .res .t{font-size:12.5px;font-weight:600;line-height:1.35;
@@ -246,9 +273,13 @@
   .rfile .pg{font-size:12px;color:var(--dim);white-space:nowrap}
   .rfile.dis{opacity:.45;cursor:default}
   .rfile.dis:hover{border-color:var(--line)}
-  .libdel{background:transparent;border:none;color:var(--dim);font-size:14px;
-    cursor:pointer;padding:4px 8px;border-radius:6px}
-  .libdel:hover{color:#ff6b6b;background:rgba(255,107,107,.12)}
+  .rfile.sel{border-color:var(--accent);background:rgba(79,140,255,.08)}
+  .rfile.flash{animation:flash 1.8s ease-out}
+  @keyframes flash{0%,30%{background:rgba(79,140,255,.24);border-color:var(--accent)}
+                   100%{background:transparent}}
+  .libtick{width:18px;height:18px;flex:none;border-radius:50%;border:1px solid var(--line);
+    display:grid;place-items:center;font-size:11px;color:transparent;background:#0b0d11}
+  .libtick.on{background:var(--accent);border-color:var(--accent);color:#fff}
   .libgroup{font-size:12px;font-weight:700;color:var(--dim);
     text-transform:uppercase;letter-spacing:.06em;margin:16px 0 8px}
   .libgroup:first-child{margin-top:4px}
@@ -371,6 +402,12 @@ https://archive.org/search?query=…"></textarea>
         <button class="btn" id="addAllBtn">Add all results to queue</button>
         <span class="hint" style="margin:0" id="addAllHint"></span>
       </div>
+      <div class="selbar" id="selBar" hidden>
+        <span id="selCount">0 selected</span>
+        <span class="sp"></span>
+        <button class="btn sm" id="selAdd">Add to queue</button>
+        <button class="btn ghost sm" id="selClear">Clear</button>
+      </div>
       <div class="results" id="results"></div>
       <div class="pager" id="pager" style="display:none">
         <button id="prev">‹</button>
@@ -385,7 +422,16 @@ https://archive.org/search?query=…"></textarea>
     <div class="card">
       <div class="row" style="margin-top:0;justify-content:space-between">
         <h2 style="margin:0">Your library</h2>
-        <input type="search" id="libQ" placeholder="Filter…" style="max-width:240px">
+        <div class="row" style="margin:0;gap:8px">
+          <input type="search" id="libQ" placeholder="Filter…" style="max-width:240px">
+          <button class="btn ghost sm" id="libSelBtn">Select</button>
+        </div>
+      </div>
+      <div class="selbar" id="libSelBar" hidden>
+        <span id="libSelCount">0 selected</span>
+        <span class="sp"></span>
+        <button class="btn sm danger" id="libDelSel">Delete</button>
+        <button class="btn ghost sm" id="libSelCancel">Cancel</button>
       </div>
       <div id="libMeta" class="hint"></div>
       <div id="libList"></div>
@@ -431,15 +477,16 @@ function esc(s){
 }
 
 /* ---------- tabs ---------- */
+function setTab(tab){
+  document.querySelectorAll(".tab").forEach(x=>
+    x.classList.toggle("on", x.dataset.tab === tab));
+  $("view-queue").style.display   = tab==="queue"   ? "" : "none";
+  $("view-search").style.display  = tab==="search"  ? "" : "none";
+  $("view-library").style.display = tab==="library" ? "" : "none";
+  if(tab === "library") loadLibrary();
+}
 document.querySelectorAll(".tab").forEach(t=>{
-  t.onclick = ()=>{
-    document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("on", x===t));
-    const tab = t.dataset.tab;
-    $("view-queue").style.display = tab==="queue" ? "" : "none";
-    $("view-search").style.display = tab==="search" ? "" : "none";
-    $("view-library").style.display = tab==="library" ? "" : "none";
-    if(tab === "library") loadLibrary();
-  };
+  t.onclick = ()=>setTab(t.dataset.tab);
 });
 
 /* ---------- queue rendering ---------- */
@@ -591,16 +638,27 @@ function renderStatus(st){
   txt.textContent = q ? `${q} waiting` : "Idle";
 }
 
+let tickCount = 0;
 async function tick(){
   try{
     const st = await api("/api/state");
     lastState = st;
     renderStatus(st);
     renderJobs(st);
+    // Keep the search grid's queue badges current. Cheap: covered() is a small
+    // dict, and the grid only re-renders when it actually changed.
+    if(++tickCount % 3 === 0) maybeRefreshBadges();
   }catch(e){
     $("statusText").textContent = "Disconnected";
     $("statusDot").className = "dot";
   }
+}
+
+async function maybeRefreshBadges(){
+  if(!lastResult || $("view-search").style.display === "none") return;
+  const before = JSON.stringify(covered);
+  await refreshCovered();
+  if(JSON.stringify(covered) !== before) renderCards(lastResult.docs);
 }
 
 /* ---------- actions ---------- */
@@ -690,34 +748,8 @@ async function loadPage(){
       const nb = $("nextForMore");
       if(nb) nb.onclick = ()=>{ searchPage++; loadPage(); };
     } else {
-      host.innerHTML = r.docs.map(d=>{
-        const kind = d.hold_kind;
-        const isColl = kind === "collection";
-        const isBundle = kind === "bundle";
-        let badge = "";
-        if(isColl) badge = "collection";
-        else if(isBundle) badge = `${d.scans} issues`;
-        else if(kind === "single") badge = "1 issue";
-        const y = [d.year, badge].filter(Boolean).join(" · ");
-        return `<div class="res" data-id="${esc(d.identifier)}" data-kind="${esc(kind||"")}"
-                     title="${esc(d.title)}">
-          <img loading="lazy" src="${esc(d.thumb)}" alt=""
-               onerror="this.style.display='none'">
-          <div class="body">
-            <div class="t">${esc(d.title)}</div>
-            <div class="y${isColl?" coll":""}">${esc(y)}</div>
-          </div>
-        </div>`;
-      }).join("");
-      host.querySelectorAll(".res").forEach(el=>{
-        el.onclick = ()=>{
-          const id = el.dataset.id;
-          const url = el.dataset.kind === "collection"
-            ? `https://archive.org/details/${id}?tab=collection`
-            : `https://archive.org/details/${id}`;
-          addOne(url);
-        };
-      });
+      await refreshCovered();
+      renderCards(r.docs);
     }
     const pages = Math.max(1, Math.ceil(r.numFound/24));
     $("pager").style.display = pages>1 ? "" : "none";
@@ -745,16 +777,179 @@ async function loadPage(){
   }
 }
 
-async function addOne(url){
+/* ---------- search selection + queue state ---------- */
+let covered = {};              // identifier -> {job, status, file, skip}
+const selected = new Set();    // identifiers picked on this page
+
+// One distinct symbol per state so the grid reads at a glance.
+const COVER = {
+  done:        {cls:"done", sym:"✓", label:"in library"},
+  queued:      {cls:"wait", sym:"◷", label:"queued"},
+  planned:     {cls:"wait", sym:"◷", label:"ready"},
+  resume:      {cls:"wait", sym:"◷", label:"resuming"},
+  resolving:   {cls:"busy", sym:"◌", label:"resolving"},
+  downloading: {cls:"busy", sym:"↓", label:"downloading"},
+  verifying:   {cls:"busy", sym:"◌", label:"verifying"},
+  failed:      {cls:"fail", sym:"✕", label:"failed"},
+  cancelled:   {cls:"off",  sym:"–", label:"cancelled"},
+};
+
+async function refreshCovered(){
   try{
-    await api("/api/add", {
-      method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({urls:[url]})
-    });
-    toast("Added to queue");
-    tick();
-  }catch(e){ toast(e.message); }
+    const r = await api("/api/covered");
+    covered = r.covered || {};
+  }catch(e){ covered = {}; }
 }
+
+function coverFor(id){
+  const c = covered[id];
+  if(!c) return null;
+  if(c.skip && c.status !== "done") return {cls:"off", sym:"–", label:"unavailable"};
+  return COVER[c.status] || COVER.queued;
+}
+
+function renderCards(docs){
+  const host = $("results");
+  host.innerHTML = docs.map(d=>{
+    const kind = d.hold_kind || "";
+    const isColl = kind === "collection";
+    const isBundle = kind === "bundle";
+    let badge = "";
+    if(isColl) badge = "collection";
+    else if(isBundle) badge = `${d.scans} issues`;
+    else if(kind === "single") badge = "1 issue";
+    const y = [d.year, badge].filter(Boolean).join(" · ");
+
+    const cv = coverFor(d.identifier);
+    const c  = covered[d.identifier];
+    const st = cv ? `<span class="st ${cv.cls}">${cv.sym} ${esc(cv.label)}</span>` : "";
+
+    // Queued work can be pulled out of the queue; finished work can jump to its
+    // library entry. Deleting a downloaded file lives in the Library, not here.
+    let acts = "";
+    if(cv && c){
+      acts = c.status === "done"
+        ? `<div class="acts"><button data-lib="${esc(c.job)}" data-file="${esc(c.file)}">Open in library</button></div>`
+        : `<div class="acts"><button class="danger" data-rm="${esc(c.job)}">Remove from queue</button></div>`;
+    }
+
+    const on = selected.has(d.identifier) ? " sel" : "";
+    return `<div class="res${on}" data-id="${esc(d.identifier)}" data-kind="${esc(kind)}"
+                 title="${esc(d.title)}">
+      <span class="tick">✓</span>
+      ${st}
+      <img loading="lazy" src="${esc(d.thumb)}" alt=""
+           onerror="this.style.display='none'">
+      <div class="body">
+        <div class="t">${esc(d.title)}</div>
+        <div class="y${isColl?" coll":""}">${esc(y)}</div>
+      </div>
+      ${acts}
+    </div>`;
+  }).join("");
+
+  host.querySelectorAll(".res").forEach(el=>{
+    el.onclick = (e)=>{
+      if(e.target.closest("button")) return;   // action buttons handle their own click
+      toggleSelect(el.dataset.id, el);
+    };
+  });
+  host.querySelectorAll("[data-rm]").forEach(b=>{
+    b.onclick = async (e)=>{
+      e.stopPropagation();
+      if(!confirm("Remove this job from the queue? Files already downloaded are kept.")) return;
+      try{
+        await api("/api/remove", {method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({id: b.dataset.rm})});
+        toast("Removed from queue");
+        await refreshCovered();
+        if(lastResult) renderCards(lastResult.docs);
+      }catch(err){ toast(err.message); }
+    };
+  });
+  host.querySelectorAll("[data-lib]").forEach(b=>{
+    b.onclick = (e)=>{
+      e.stopPropagation();
+      gotoLibrary(b.dataset.lib, b.dataset.file);
+    };
+  });
+  updateSelBar();
+}
+
+function toggleSelect(id, el){
+  if(selected.has(id)) selected.delete(id); else selected.add(id);
+  el.classList.toggle("sel", selected.has(id));
+  updateSelBar();
+}
+
+function updateSelBar(){
+  const n = selected.size;
+  $("selBar").hidden = n === 0;
+  $("selCount").textContent = `${n} selected`;
+}
+
+async function addSelected(){
+  const ids = [...selected];
+  if(!ids.length) return;
+  // Skip what is already queued so a second click isn't a wall of errors.
+  const fresh = ids.filter(id => !covered[id]);
+  const skipped = ids.length - fresh.length;
+  const btn = $("selAdd");
+  selected.clear();
+  document.querySelectorAll(".res.sel").forEach(el=>el.classList.remove("sel"));
+  updateSelBar();
+  if(!fresh.length){ toast("Already queued"); return; }
+
+  btn.disabled = true; btn.textContent = "Adding…";
+  try{
+    const urls = fresh.map(id=>{
+      const el = document.querySelector(`.res[data-id="${CSS.escape(id)}"]`);
+      const kind = el ? el.dataset.kind : "";
+      return kind === "collection"
+        ? `https://archive.org/details/${id}?tab=collection`
+        : `https://archive.org/details/${id}`;
+    });
+    const r = await api("/api/add", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({urls})});
+    const bits = [];
+    if(r.added.length) bits.push(`queued ${r.added.length}`);
+    if(skipped)        bits.push(`${skipped} already queued`);
+    if(r.errors.length) bits.push(r.errors.map(e=>e.error).join(" · "));
+    toast(bits.join(" · ") || "Nothing added");
+    await refreshCovered();
+    if(lastResult) renderCards(lastResult.docs);
+    tick();
+  }catch(e){
+    toast("Could not add: " + e.message);
+  }finally{
+    btn.disabled = false; btn.textContent = "Add to queue";
+  }
+}
+
+function gotoLibrary(job, file){
+  setTab("library");
+  let tries = 0;
+  const t = setInterval(()=>{
+    const el = [...document.querySelectorAll("#libList .rfile")]
+      .find(x => x.dataset.job === job && x.dataset.name === file);
+    if(el){
+      el.scrollIntoView({block:"center", behavior:"smooth"});
+      el.classList.add("flash");
+      setTimeout(()=>el.classList.remove("flash"), 1800);
+      clearInterval(t);
+    }
+    if(++tries > 25) clearInterval(t);   // library may still be loading
+  }, 200);
+}
+
+$("selAdd").onclick = addSelected;
+$("selClear").onclick = ()=>{
+  selected.clear();
+  document.querySelectorAll(".res.sel").forEach(el=>el.classList.remove("sel"));
+  updateSelBar();
+};
 
 $("addAllBtn").onclick = async ()=>{
   if(!lastResult) return;
@@ -800,11 +995,17 @@ async function loadLibrary(){
   }
 }
 
+let libSelectMode = false;
+const libSelected = new Set();   // keys of rows ticked in select mode
+
 function renderLibrary(){
   const q = ($("libQ").value || "").trim().toLowerCase();
   const shown = q
     ? libItems.filter(i => (i.series + " " + i.name).toLowerCase().includes(q))
     : libItems;
+
+  $("libSelBtn").textContent = libSelectMode ? "Done" : "Select";
+  $("libSelBar").hidden = !libSelectMode;
 
   if(!libItems.length){
     $("libMeta").textContent = "";
@@ -828,36 +1029,76 @@ function renderLibrary(){
       const badge = it.finished
         ? '<span class="libfin">finished</span>'
         : (it.progress ? `<span class="libpg">${it.progress}/${it.pages}</span>` : "");
-      return `<div class="rfile${it.readable?"":" dis"}" data-job="${esc(it.job)}"
-                   data-name="${esc(it.name)}" data-key="${esc(it.key)}">
+      const on = libSelected.has(it.key) ? " sel" : "";
+      // Deleting is a deliberate act: only offered once Select is on.
+      const tick = libSelectMode ? `<span class="libtick${on ? " on" : ""}">✓</span>` : "";
+      return `<div class="rfile${it.readable?"":" dis"}${on}" data-key="${esc(it.key)}"
+                   data-job="${esc(it.job)}" data-name="${esc(it.name)}">
+        ${tick}
         <span class="nm">${esc(it.name)}</span>
         ${badge}
         <span class="pg">${it.kind === "cbz" ? it.pages + " pages" : "PDF"}</span>
-        <button class="libdel" data-del-job="${esc(it.job)}" data-del-name="${esc(it.name)}"
-                title="Delete this file">✕</button>
       </div>`;
     }).join("")}
   `).join("");
 
   $("libList").querySelectorAll(".rfile").forEach(el => {
-    if(el.classList.contains("dis")) return;
-    const it = libItems.find(x => x.key === el.dataset.key);
-    el.onclick = () => openBook(it);
-  });
-  $("libList").querySelectorAll(".libdel").forEach(btn => {
-    btn.onclick = async (e) => {
-      e.stopPropagation();
-      if(!confirm("Delete this file from disk?")) return;
-      try{
-        await api("/api/delete", {
-          method:"POST", headers:{"Content-Type":"application/json"},
-          body: JSON.stringify({id: btn.dataset.delJob, file: btn.dataset.delName})
-        });
-        loadLibrary();
-      }catch(err){ toast(err.message); }
+    el.onclick = () => {
+      if(libSelectMode){
+        const k = el.dataset.key;
+        if(libSelected.has(k)) libSelected.delete(k); else libSelected.add(k);
+        renderLibrary();
+        return;
+      }
+      if(el.classList.contains("dis")) return;
+      const it = libItems.find(x => x.key === el.dataset.key);
+      if(it) openBook(it);
     };
   });
+  updateLibSelBar();
 }
+
+function updateLibSelBar(){
+  $("libSelCount").textContent = `${libSelected.size} selected`;
+  $("libDelSel").disabled = libSelected.size === 0;
+}
+
+$("libSelBtn").onclick = ()=>{
+  libSelectMode = !libSelectMode;
+  if(!libSelectMode) libSelected.clear();
+  renderLibrary();
+};
+$("libSelCancel").onclick = ()=>{
+  libSelectMode = false;
+  libSelected.clear();
+  renderLibrary();
+};
+$("libDelSel").onclick = async ()=>{
+  const picked = libItems.filter(i => libSelected.has(i.key));
+  if(!picked.length) return;
+  const names = picked.map(i => i.name);
+  const ok = confirm(
+    `Delete ${picked.length} file${picked.length===1?"":"s"} from disk?\n\n` +
+    names.slice(0, 8).join("\n") + (names.length > 8 ? `\n…and ${names.length-8} more` : "")
+  );
+  if(!ok) return;
+  const btn = $("libDelSel");
+  btn.disabled = true; btn.textContent = "Deleting…";
+  let failed = 0;
+  for(const it of picked){
+    try{
+      await api("/api/delete", {method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({id: it.job, file: it.name})});
+    }catch(err){ failed++; }
+  }
+  btn.textContent = "Delete";
+  libSelected.clear();
+  libSelectMode = false;
+  await loadLibrary();
+  toast(failed ? `Deleted ${picked.length - failed}, ${failed} failed`
+               : `Deleted ${picked.length} file${picked.length===1?"":"s"}`);
+};
 
 $("libQ").oninput = renderLibrary;
 

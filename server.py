@@ -44,7 +44,7 @@ ENGINE = engine.Engine()
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "HardlyReading/1.1.0"
+    server_version = "HardlyReading/1.2.0"
 
     def log_message(self, fmt, *args):
         pass  # quiet
@@ -90,6 +90,9 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/api/state":
             return self._send(200, ENGINE.snapshot())
+
+        if path == "/api/covered":
+            return self._send(200, {"covered": ENGINE.covered()})
 
         if path == "/api/search":
             query = (qs.get("q") or [""])[0].strip()
