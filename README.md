@@ -3,6 +3,12 @@
 Desktop-friendly web app for grabbing magazines, comics and PDFs from
 [Internet Archive](https://archive.org) and reading them locally.
 
+> **Built with AI.** HardlyReading was made using **DeepSeek V4.1 Flash** running
+> inside a **Hermes agent** — an autonomous coding agent that wrote the code,
+> ran the tests and cut the releases. It is a real, working program, but it was
+> not hand-typed by a person, and it has only been tested on Linux (see
+> [Limitations](#limitations)).
+
 Paste a collection link (or an item link, or a search result), it resolves every
 member, downloads one good file per issue — **CBZ/CBR first, then PDF** — verifies
 each one against archive.org's checksum, and files it into a Komga-compatible
@@ -148,6 +154,25 @@ symbol per state:
 A queued card offers **Remove from queue**; a downloaded card offers
 **Open in library**, which jumps to the file and highlights it. Deleting a
 downloaded file only happens in the Library, never from search.
+
+### Install it as an app (PWA)
+
+HardlyReading ships a manifest and a service worker, so a browser can install it:
+in Chrome or Edge use the install icon in the address bar; on Android use *Add to
+home screen*; Safari on iOS uses *Share → Add to Home Screen*. It opens in its own
+window with the HR icon and no address bar.
+
+What that does and does not buy you, plainly:
+
+- **Works:** the app shell opens with no network and says "Disconnected" instead
+  of showing a browser error page.
+- **Does not work offline:** searching, queueing and downloading all need
+  archive.org, so an offline install is a viewer for nothing. Files you already
+  downloaded still open, because they are served by your own machine.
+- **Never cached:** every `/api/*` response. A cached queue would show jobs that
+  are not running, so the worker refuses to store them.
+- Install prompts need `https://` or `localhost`. On a plain-HTTP LAN address the
+  page still works, it just will not offer to install.
 
 ### The queue is a real queue: you control the order
 

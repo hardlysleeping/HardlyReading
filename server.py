@@ -44,7 +44,7 @@ ENGINE = engine.Engine()
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "HardlyReading/1.6.1"
+    server_version = "HardlyReading/1.7.0"
 
     def log_message(self, fmt, *args):
         pass  # quiet
@@ -67,6 +67,23 @@ class Handler(BaseHTTPRequestHandler):
         try:
             with open(p, "rb") as fh:
                 self._send(200, fh.read(), "text/html; charset=utf-8")
+        except OSError:
+            self._send(404, "not found", "text/plain")
+
+    def _asset(self, rel, ctype):
+        """Serve a single file from the app directory with an explicit type.
+
+        Used for the PWA files (manifest, service worker, icons). Only files
+        that a route names explicitly reach this, and the path is contained to
+        the app directory regardless.
+        """
+        root = os.path.realpath(HERE)
+        p = os.path.realpath(os.path.join(root, rel))
+        if not p.startswith(root + os.sep) or not os.path.isfile(p):
+            return self._send(404, "not found", "text/plain")
+        try:
+            with open(p, "rb") as fh:
+                self._send(200, fh.read(), ctype)
         except OSError:
             self._send(404, "not found", "text/plain")
 
@@ -161,6 +178,19 @@ class Handler(BaseHTTPRequestHandler):
 
         if path.startswith("/vendor/"):
             return self._vendor(path[len("/vendor/"):])
+
+        # PWA assets. The service worker must be served from the root to get
+        # scope "/", and a manifest needs the application/manifest+json type or
+        # browsers ignore it.
+        if path == "/manifest.webmanifest":
+            return self._asset("manifest.webmanifest", "application/manifest+json")
+        if path == "/sw.js":
+            return self._asset("sw.js", "text/javascript; charset=utf-8")
+        if path.startswith("/icons/"):
+            name = path[len("/icons/"):]
+            if "/" in name or not name.endswith(".png"):
+                return self._send(404, "not found", "text/plain")
+            return self._asset(os.path.join("icons", name), "image/png")
 
         if path == "/api/state":
             return self._send(200, ENGINE.snapshot())

@@ -19,6 +19,13 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#0f1115">
+<meta name="description" content="Download magazines, comics, PDFs and documents from the Internet Archive.">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" href="/icons/favicon-32.png" sizes="32x32">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="HardlyReading">
 <title>HardlyReading</title>
 <style>
   :root{
@@ -1467,6 +1474,15 @@ function paintPage(){
   $("rpage").textContent = `${s.page + 1} / ${s.count}`;
   $("rprev").disabled = s.page <= 0;
   $("rnext").disabled = s.page >= s.count - 1;
+}
+
+/* Service worker: installable app + an offline shell. It never caches /api/*,
+   so a stale queue is impossible; if registration fails the app behaves exactly
+   as before. */
+if("serviceWorker" in navigator && location.protocol !== "file:"){
+  window.addEventListener("load", ()=>{
+    navigator.serviceWorker.register("/sw.js").catch(()=>{ /* http on a LAN IP without TLS */ });
+  });
 }
 
 /* ---------- settings ---------- */

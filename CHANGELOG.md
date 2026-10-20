@@ -3,6 +3,22 @@
 Notable changes to HardlyReading. Versions are tagged on GitHub with matching
 release notes.
 
+## [1.7.0] — 2026-10-20
+
+### Added
+
+- **Installable as an app (PWA).** A web manifest, generated icons and a service
+  worker let the browser install HardlyReading in its own window with the HR
+  icon. The shell opens offline and shows "Disconnected" instead of a network
+  error. `/api/*` is never cached, so a stale queue is impossible. An offline
+  install cannot search or download anything — archive.org is the whole point.
+- README discloses at the top that the project is built with DeepSeek V4.1 Flash
+  running in a Hermes agent.
+
+### Fixed
+
+- `README` link to Limitations from the header.
+
 ## [1.6.1] — 2026-10-20
 
 ### Fixed
@@ -140,6 +156,7 @@ First release.
 - Built-in CBZ / CBR / PDF reader; CBR needs `unrar`, `bsdtar` or `7z`
 - Cross-platform launcher that finds `aria2c` and opens the browser
 
+[1.7.0]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v1.7.0
 [1.6.1]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v1.6.1
 [1.6.0]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v1.6.0
 [1.5.0]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v1.5.0
