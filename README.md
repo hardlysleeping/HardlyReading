@@ -198,7 +198,7 @@ select mode without deleting anything.
 ### The library reads the folder, not just the queue
 
 The Library lists what is actually in your **download folder** — the one set in
-Settings, default `~/Downloads/HardlyReading`, including its series subfolders.
+Settings, default `~/Documents/HardlyReading`, including its series subfolders.
 Files are matched against the queue first, then the folder is scanned for
 anything else, so a download from an earlier run, a file you copied in by hand,
 or a leftover after removing the job that fetched it all still appear and open.
@@ -226,8 +226,14 @@ subfolder becomes a series.
 
 ## The reader
 
-Deliberately minimal: one page at a time, fitted to the window, `←`/`→` or the
-arrow buttons to turn, `Esc` to close. CBZ pages are read straight out of the zip
+Deliberately minimal: one page at a time, **fitted to the window** — the whole
+page, not a zoomed slice you have to scroll — `←`/`→` or the arrow buttons to
+turn, `Esc` to close.
+
+Zoom is `−` / `+` / `Fit` (or the `-`, `+` and `0` keys). Fit means the page
+fits both the width and the height of the pane whatever size the window is; the
+percentage is relative to that, so 125% is a bit bigger than fit, not an
+absolute scale. Zoomed in, the pane scrolls. CBZ pages are read straight out of the zip
 by the server. PDFs are drawn by [pdf.js](https://mozilla.github.io/pdf.js/),
 bundled in `vendor/` (about 1.7 MB, Apache-2.0) rather than loaded from a CDN, so
 the app works offline apart from archive.org itself.
@@ -243,6 +249,7 @@ The gear in the header opens a panel; changes save as you edit and persist in
 
 | Setting | Default | What it does |
 |---|---|---|
+| Download folder | *empty* | Empty means `~/Documents/HardlyReading`, created on the first download. Point it anywhere else and the Library follows it. |
 | Show "reader" label | on | The small label in the reader header. Off gives a clean page. |
 | Clear reading history | — | Forgets every saved page position. Files stay on disk. |
 | Ask before downloading | on | Show the file plan and total size, then wait for you. |

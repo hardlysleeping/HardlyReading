@@ -79,13 +79,38 @@ def user_config_dir() -> str:
     return p
 
 
-def default_download_dir() -> str:
+def documents_dir() -> str:
+    """The user's Documents folder, honouring XDG on Linux.
+
+    Read from ~/.config/user-dirs.dirs rather than assuming ~/Documents, because
+    a localized or relocated home puts it somewhere else and writing a library
+    into a folder nobody opens is the same as losing it.
+    """
     home = os.path.expanduser("~")
-    for name in ("Downloads", "downloads"):
-        p = os.path.join(home, name)
-        if os.path.isdir(p):
-            return os.path.join(p, "HardlyReading")
-    return os.path.join(home, "HardlyReading")
+    cfg = os.path.join(home, ".config", "user-dirs.dirs")
+    try:
+        with open(cfg, "r", encoding="utf-8", errors="replace") as fh:
+            for line in fh:
+                line = line.strip()
+                if line.startswith("XDG_DOCUMENTS_DIR"):
+                    val = line.split("=", 1)[1].strip().strip('"')
+                    if val:
+                        return val.replace("$HOME", home)
+    except OSError:
+        pass
+    return os.path.join(home, "Documents")
+
+
+def default_download_dir() -> str:
+    """Where downloads go when the setting is empty: <Documents>/HardlyReading.
+
+    Documents rather than Downloads: these are things you keep and read, not
+    files you clear out of a download tray. Falls back to the home directory if
+    there is no Documents folder at all.
+    """
+    docs = documents_dir()
+    base = docs if os.path.isdir(docs) else os.path.expanduser("~")
+    return os.path.join(base, "HardlyReading")
 
 
 STATE_FILE = os.environ.get("IA_STATE") or os.path.join(user_config_dir(), "state.json")
@@ -98,7 +123,7 @@ def http_json(url: str, timeout: int = 60):
     """GET a URL and return parsed JSON. No retry here — callers that can
     recover (the resolver, the per-item probe) do their own attempts."""
 
-    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/1.7.0"})
+    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/1.8.0"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.load(r)
 
@@ -764,6 +789,9 @@ class Engine:
                 "paused": self.paused,
                 "busy": bool(self.current),
                 "settings": dict(self.settings),
+                # The UI shows this when the folder field is left empty, so an
+                # empty box is explained instead of looking like "no folder".
+                "download_default": default_download_dir(),
                 "counts": {
                     "queued": sum(1 for j in self.jobs if j.status == "queued"),
                     "active": sum(1 for j in self.jobs if j.status in

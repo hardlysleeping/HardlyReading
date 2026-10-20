@@ -3,6 +3,28 @@
 Notable changes to HardlyReading. Versions are tagged on GitHub with matching
 release notes.
 
+## [1.8.0] — 2026-10-20
+
+### Fixed
+
+- **The reader opened zoomed in and needed scrolling.** Pages are now fitted to
+  the pane — width *and* height — for both CBZ/CBR and PDF, so a page is fully
+  visible when it opens.
+- **Settings had an empty "Download folder" box with no explanation.** Empty now
+  reads as what it means, with the effective path shown as the placeholder and
+  in a line underneath; a "Use default" button appears once you set a custom one.
+
+### Added
+
+- **Zoom controls in the reader:** `−`, `+` and `Fit`, plus the `-`, `+` and `0`
+  keys. Zoom is a multiplier on fit, so it behaves the same at any window size.
+
+### Changed
+
+- **Downloads default to `~/Documents/HardlyReading`**, not Downloads — these are
+  files you keep and read, not a download tray. XDG is honoured, so a relocated
+  or localised Documents folder is respected.
+
 ## [1.7.0] — 2026-10-20
 
 ### Added
@@ -156,6 +178,7 @@ First release.
 - Built-in CBZ / CBR / PDF reader; CBR needs `unrar`, `bsdtar` or `7z`
 - Cross-platform launcher that finds `aria2c` and opens the browser
 
+[1.8.0]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v1.8.0
 [1.7.0]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v1.7.0
 [1.6.1]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v1.6.1
 [1.6.0]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v1.6.0

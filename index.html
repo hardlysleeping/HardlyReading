@@ -267,17 +267,15 @@
   .pdfhost{flex:1;overflow:auto;background:#0b0d11;display:flex;
     justify-content:center;align-items:flex-start;padding:12px}
   .pdfhost canvas{box-shadow:0 4px 24px rgba(0,0,0,.5);background:#fff}
-  .rstage{flex:1;min-height:0;overflow:auto;display:flex;
-    align-items:center;justify-content:center;padding:20px}
-  /* Fit the whole page in the viewport with margins. `max-height` on a flex
-     child needs a min-height:0 parent or it resolves against content and the
-     scan opens zoomed in. */
-  .rstage img{display:block;max-width:min(100%,1200px);
-    max-height:calc(100vh - 130px);width:auto;height:auto;
-    object-fit:contain;
-    box-shadow:0 4px 30px rgba(0,0,0,.6)}
-  .rstage.zoomed{display:block;overflow:auto;text-align:center}
-  .rstage.zoomed img{max-width:none;max-height:none;width:auto;margin:0 auto}
+  /* The stage scrolls; the page is sized in JS to fit it exactly at zoom 1.
+     `margin:auto` on the image rather than justify-content, because a centred
+     flex item wider than its container clips its left edge and you cannot
+     scroll to it. */
+  .rstage{flex:1;min-height:0;overflow:auto;display:flex;padding:14px}
+  .rfit{min-width:100%;min-height:100%;display:flex}
+  .rfit img{display:block;margin:auto;box-shadow:0 4px 30px rgba(0,0,0,.6)}
+  .rzoom{font-size:12px;color:var(--dim);min-width:46px;text-align:center;
+    font-variant-numeric:tabular-nums}
   .rpage{font-size:13px;color:var(--dim);min-width:88px;text-align:center}
   .rlist{flex:1;overflow:auto;padding:18px 22px}
   .rfile{display:flex;align-items:center;gap:12px;padding:11px 14px;
@@ -363,8 +361,10 @@
 
         <label class="rowfield">
           <span>Download folder</span>
-          <input type="text" id="set_download_dir" spellcheck="false">
+          <input type="text" id="set_download_dir" spellcheck="false"
+                 placeholder="">
         </label>
+        <div class="hint" id="dlHint" style="margin:-2px 0 4px"></div>
         <div class="row2">
           <label class="rowfield">
             <span>Parallel files</span>
@@ -1263,6 +1263,10 @@ async function openReader(jobId){
 function hideReader(){
   const r = $("reader");
   if(r) r.remove();
+  if(window._rResize){
+    window.removeEventListener("resize", window._rResize);
+    window._rResize = null;
+  }
   document.removeEventListener("keydown", readerKeys);
   // The PDF viewer keeps its own key handler and document handle; dropping the
   // handle lets pdf.js release the worker for the next file.
@@ -1288,13 +1292,18 @@ async function openPdf(item, wrap, qs){
       <button id="rprev" title="Previous page">‹</button>
       <span id="rpdfpage" class="muted">opening…</span>
       <button id="rnext" title="Next page">›</button>
+      <span class="sp"></span>
+      <button id="rzoomout" title="Zoom out (−)">−</button>
+      <span class="rzoom" id="rzoomlbl">Fit</span>
+      <button id="rzoomin" title="Zoom in (+)">+</button>
+      <button id="rzoomfit" title="Fit to screen (0)">Fit</button>
       <button id="rclose">Close</button>
     </div>
     <div class="pdfhost" id="pdfhost"><canvas id="pdfcanvas"></canvas></div>`;
   document.body.appendChild(wrap);
 
   const state = { page: Math.max(0, item.progress || 0), total: 0, doc: null,
-                  busy: false, item };
+                  busy: false, item, zoom: 1 };
   pdfState = state;
 
   try{
@@ -1320,11 +1329,13 @@ async function openPdf(item, wrap, qs){
       const host = $("pdfhost");
       const canvas = $("pdfcanvas");
       if(!host || !canvas) return;
-      // Fit the page to the pane width; tall pages scroll instead of shrinking
-      // to an unreadable thumbnail.
-      const avail = Math.max(240, host.clientWidth - 24);
+      // Fit the whole page: the smaller of the width and height ratios, so a
+      // tall page is fully visible at zoom 1 instead of needing a scroll.
+      const availW = Math.max(160, host.clientWidth  - 28);
+      const availH = Math.max(160, host.clientHeight - 28);
       const base = page.getViewport({ scale: 1 });
-      const vp = page.getViewport({ scale: avail / base.width });
+      const fit = Math.min(availW / base.width, availH / base.height);
+      const vp = page.getViewport({ scale: fit * (state.zoom || 1) });
       const dpr = window.devicePixelRatio || 1;
       canvas.width = Math.floor(vp.width * dpr);
       canvas.height = Math.floor(vp.height * dpr);
@@ -1376,6 +1387,25 @@ async function openPdf(item, wrap, qs){
   $("rprev").onclick = ()=> go(state.page - 1);
   $("rnext").onclick = ()=> go(state.page + 1);
   $("rclose").onclick = hideReader;
+  // Same zoom behaviour as the CBZ reader: 1 = fit the whole page.
+  const pdfZoom = (z) => {
+    state.zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z));
+    const lbl = $("rzoomlbl");
+    if(lbl) lbl.textContent = state.zoom === 1 ? "Fit" : Math.round(state.zoom*100) + "%";
+    const fb = $("rzoomfit");
+    if(fb) fb.disabled = state.zoom === 1;
+    draw();
+  };
+  $("rzoomin").onclick  = ()=> pdfZoom(state.zoom * 1.25);
+  $("rzoomout").onclick = ()=> pdfZoom(state.zoom / 1.25);
+  $("rzoomfit").onclick = ()=> pdfZoom(1);
+  // Keyboard zoom for PDFs too: pdfKeys only knows about pages.
+  document.addEventListener("keydown", (e)=>{
+    if(!pdfState) return;
+    if(e.key === "+" || e.key === "=") { e.preventDefault(); pdfZoom(state.zoom * 1.25); }
+    else if(e.key === "-" || e.key === "_") { e.preventDefault(); pdfZoom(state.zoom / 1.25); }
+    else if(e.key === "0") { e.preventDefault(); pdfZoom(1); }
+  });
 
   // Redraw at the new width; debounced so a drag does not queue renders.
   let rz = null;
@@ -1417,23 +1447,65 @@ async function openBook(item){
       ${brandHtml()}
       <span class="t">${esc(item.name)}</span>
       <span class="sp"></span>
-      <button id="rprev">‹</button>
+      <button id="rprev" title="Previous page">‹</button>
       <span class="rpage" id="rpage"></span>
-      <button id="rnext">›</button>
+      <button id="rnext" title="Next page">›</button>
+      <span class="sp"></span>
+      <button id="rzoomout" title="Zoom out (−)">−</button>
+      <span class="rzoom" id="rzoomlbl">Fit</span>
+      <button id="rzoomin" title="Zoom in (+)">+</button>
+      <button id="rzoomfit" title="Fit to screen (0)">Fit</button>
       <button id="rclose">Close</button>
     </div>
-    <div class="rstage"><img id="rimg" alt=""></div>`;
+    <div class="rstage" id="rstage"><div class="rfit"><img id="rimg" alt=""></div></div>`;
   document.body.appendChild(wrap);
 
+  readerState.zoom = 1;          // 1 = fit the whole page in the stage
   $("rprev").onclick = () => stepPage(-1);
   $("rnext").onclick = () => stepPage(1);
   $("rclose").onclick = hideReader;
+  $("rzoomin").onclick  = () => zoomBy(1.25);
+  $("rzoomout").onclick = () => zoomBy(1 / 1.25);
+  $("rzoomfit").onclick = () => setZoom(1);
   document.addEventListener("keydown", readerKeys);
+  $("rimg").onload = () => applyZoom();
+  window.addEventListener("resize", window._rResize = () => applyZoom());
   paintPage();
+}
+
+/* Zoom is a multiplier on top of "fit page", not on top of 1:1 pixels: at 1
+   the whole page is visible whatever the window size, and the buttons step
+   relative to that. */
+const ZOOM_MIN = 0.5, ZOOM_MAX = 6;
+
+function setZoom(z){
+  if(!readerState) return;
+  readerState.zoom = Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, z));
+  applyZoom();
+}
+
+function zoomBy(f){ setZoom((readerState?.zoom || 1) * f); }
+
+function applyZoom(){
+  const s = readerState, img = $("rimg"), stage = $("rstage");
+  if(!s || !img || !stage || !img.naturalWidth) return;
+  const availW = Math.max(80, stage.clientWidth  - 28);
+  const availH = Math.max(80, stage.clientHeight - 28);
+  const fit = Math.min(availW / img.naturalWidth, availH / img.naturalHeight);
+  const scale = fit * (s.zoom || 1);
+  img.style.width  = Math.round(img.naturalWidth  * scale) + "px";
+  img.style.height = Math.round(img.naturalHeight * scale) + "px";
+  const lbl = $("rzoomlbl");
+  if(lbl) lbl.textContent = s.zoom === 1 ? "Fit" : Math.round(s.zoom * 100) + "%";
+  const fitBtn = $("rzoomfit");
+  if(fitBtn) fitBtn.disabled = s.zoom === 1;
 }
 
 function readerKeys(e){
   if(!readerState) return;
+  if(e.key === "+" || e.key === "="){ e.preventDefault(); zoomBy(1.25); return; }
+  if(e.key === "-" || e.key === "_"){ e.preventDefault(); zoomBy(1/1.25); return; }
+  if(e.key === "0"){ e.preventDefault(); setZoom(1); return; }
   if(e.key === "ArrowRight" || e.key === " ") { e.preventDefault(); stepPage(1); }
   else if(e.key === "ArrowLeft") { e.preventDefault(); stepPage(-1); }
   else if(e.key === "Escape") { hideReader(); }
@@ -1503,6 +1575,35 @@ function fillSettings(settings){
     if(f.type === "bool") el.checked = !!v;
     else el.value = (v === null || v === undefined) ? "" : v;
   }
+  explainDownloadDir(settings);
+}
+
+/* An empty folder box used to look like a missing setting. It is not: empty
+   means "use the default", so say which folder that is, in the field and under
+   it. */
+function explainDownloadDir(settings){
+  const box = $("set_download_dir"), hint = $("dlHint");
+  const def = (lastState && lastState.download_default) || "";
+  if(!box || !hint) return;
+  box.placeholder = def || "/path/to/folder";
+  if(!box.value){
+    hint.innerHTML = def
+      ? `Empty means the default: <code>${esc(def)}</code> — created on your first download.`
+      : "Empty means the default folder in your Documents.";
+  }else{
+    hint.innerHTML = `Files are saved under <code>${esc(box.value)}</code>, one folder per series.` +
+      (def && box.value !== def
+        ? ` <button class="btn ghost sm" id="dlReset">Use default</button>` : "");
+    const rb = $("dlReset");
+    if(rb) rb.onclick = ()=>{
+      box.value = "";
+      saveSettings();
+      explainDownloadDir({});
+      hint.innerHTML = def
+        ? `Empty means the default: <code>${esc(def)}</code> — created on your first download.`
+        : "Empty means the default folder in your Documents.";
+    };
+  }
 }
 
 function readSettings(){
@@ -1548,6 +1649,7 @@ function openSettings(){
 function closeSettings(){ $("settingsModal").hidden = true; }
 
 $("gearBtn").onclick = openSettings;
+$("set_download_dir").addEventListener("input", ()=> explainDownloadDir(lastState.settings || {}));
 $("clearHistory").onclick = async ()=>{
   if(!confirm("Forget every saved reading position?\n\nDownloaded files are not touched — only the page you were on.")) return;
   const btn = $("clearHistory");
