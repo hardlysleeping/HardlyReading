@@ -1,6 +1,7 @@
 """HardlyReading — HTTP API + static UI. Stdlib only."""
 import json
 import os
+import shutil
 import socket
 import sys
 import urllib.parse
@@ -102,12 +103,18 @@ class Handler(BaseHTTPRequestHandler):
                 if not os.path.isfile(p):
                     continue
                 pages = engine.comic_pages(p)
+                is_pdf = p.lower().endswith(".pdf")
+                if not pages and is_pdf:
+                    npages = engine.pdf_page_count(p)
+                    pages = [str(i) for i in range(npages)]
                 out.append({
                     "name": e.get("outname"),
                     "size": os.path.getsize(p),
                     "pages": len(pages),
-                    "readable": bool(pages) or p.lower().endswith(".pdf"),
-                    "kind": "cbz" if pages else ("pdf" if p.lower().endswith(".pdf") else "other"),  # CBR counts as pages
+                    "kind": "pdf" if is_pdf else ("cbz" if pages else "other"),
+                    "readable": bool(pages) or is_pdf,
+                    "key": engine.book_key(e),
+                    "progress": ENGINE.get_progress(engine.book_key(e)),
                 })
             return self._send(200, {"dir": j.dir, "files": out})
 
@@ -148,16 +155,19 @@ class Handler(BaseHTTPRequestHandler):
             if not target.startswith(os.path.realpath(j.dir)) or not os.path.isfile(target):
                 return self._send(404, {"error": "not found"})
             try:
-                with open(target, "rb") as fh:
-                    data = fh.read()
+                size = os.path.getsize(target)
             except OSError as e:
                 return self._send(500, {"error": str(e)})
             self.send_response(200)
             self.send_header("Content-Type", "application/pdf")
-            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Content-Length", str(size))
             self.send_header("Content-Disposition", "inline")
             self.end_headers()
-            self.wfile.write(data)
+            try:
+                with open(target, "rb") as fh:
+                    shutil.copyfileobj(fh, self.wfile, length=1 << 20)
+            except OSError:
+                pass  # client went away mid-stream
             return
 
         if path == "/api/library":
@@ -232,9 +242,12 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, {"added": added, "errors": errors})
 
         if path == "/api/progress":
-            ENGINE.set_progress(body.get("key") or "",
-                                int(body.get("page") or 0),
-                                int(body.get("total") or 0))
+            try:
+                page = int(body.get("page") or 0)
+                total = int(body.get("total") or 0)
+            except (TypeError, ValueError):
+                return self._send(400, {"error": "page/total must be numbers"})
+            ENGINE.set_progress(body.get("key") or "", page, total)
             return self._send(200, {"ok": True})
 
         if path == "/api/retry":
@@ -270,8 +283,13 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/settings":
             with ENGINE.lock:
                 for k, v in (body or {}).items():
-                    if k in ENGINE.settings:
-                        ENGINE.settings[k] = v
+                    if k not in ENGINE.settings:
+                        continue
+                    # `download_dir` must stay a real path string; coercing a
+                    # number here would crash os.path.join downstream.
+                    if k == "download_dir" and not isinstance(v, str):
+                        continue
+                    ENGINE.settings[k] = v
                 ENGINE.save_state()
             return self._send(200, {"settings": ENGINE.settings})
 

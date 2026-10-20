@@ -42,7 +42,7 @@ DERIVATIVE_FORMATS = {"Additional Text PDF", "EPUB", "LCP Encrypted EPUB",
                       "Archive BitTorrent", "Single Page Processed JP2 ZIP"}
 
 FORMAT_LABEL = {
-    "Comic Book RAR": "CBZ (comic)",
+    "Comic Book RAR": "CBR (comic)",
     "Comic Book ZIP": "CBZ (comic)",
     "Image Container PDF": "PDF (scan)",
     "Text PDF": "PDF (text)",
@@ -59,7 +59,7 @@ def user_config_dir() -> str:
         base = os.path.expanduser("~/Library/Application Support")
     else:
         base = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
-    p = os.path.join(base, "hardlyreader")
+    p = os.path.join(base, "hardlyreading")
     os.makedirs(p, exist_ok=True)
     return p
 

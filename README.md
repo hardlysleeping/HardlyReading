@@ -104,7 +104,7 @@ in the same place whatever device or browser you open it from.
 
 | What | Windows | macOS | Linux |
 |---|---|---|---|
-| Settings & queue | `%APPDATA%\hardlyreader` | `~/Library/Application Support/hardlyreader` | `~/.config/hardlyreader` |
+| Settings & queue | `%APPDATA%\hardlyreading` | `~/Library/Application Support/hardlyreading` | `~/.config/hardlyreading` |
 | Downloads | `%USERPROFILE%\Downloads\HardlyReading` | `~/Downloads/HardlyReading` | `~/Downloads/HardlyReading` |
 
 ## Limitations

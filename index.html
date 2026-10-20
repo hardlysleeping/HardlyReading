@@ -683,9 +683,9 @@ async function openReader(jobId){
   if(!files.length){ toast("Nothing readable yet"); return; }
 
   if(files.length === 1){
-    const j = (lastState?.jobs || []).find(x => x.id === jobId) || {};
-    return openBook({job: jobId, name: files[0].name, kind: files[0].kind,
-                     key: "", progress: 0});
+    const f = files[0];
+    return openBook({job: jobId, name: f.name, kind: f.kind,
+                     key: f.key || "", progress: f.progress || 0});
   }
 
   // Several issues: let them pick one.
@@ -699,7 +699,8 @@ async function openReader(jobId){
       <button id="rclose">Close</button>
     </div>
     <div class="rlist">${files.map(f => `
-      <div class="rfile" data-name="${esc(f.name)}" data-kind="${esc(f.kind)}">
+      <div class="rfile" data-name="${esc(f.name)}" data-kind="${esc(f.kind)}"
+           data-key="${esc(f.key)}" data-progress="${f.progress || 0}">
         <span class="nm">${esc(f.name)}</span>
         <span class="pg">${f.kind === "cbz" ? f.pages + " pages" : "PDF"}</span>
       </div>`).join("")}</div>`;
@@ -707,7 +708,8 @@ async function openReader(jobId){
   $("rclose").onclick = hideReader;
   wrap.querySelectorAll(".rfile").forEach(el => {
     el.onclick = () => openBook({job: jobId, name: el.dataset.name,
-                                 kind: el.dataset.kind, key: "", progress: 0});
+                                 kind: el.dataset.kind, key: el.dataset.key || "",
+                                 progress: parseInt(el.dataset.progress, 10) || 0});
   });
 }
 
