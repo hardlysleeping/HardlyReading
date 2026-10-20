@@ -125,6 +125,9 @@ Worth knowing before you point it at a 500-issue collection:
   software.
 - **No re-verification sweep.** Files are verified when downloaded, not re-checked
   later. If a file gets corrupted on disk, delete it and grab it again.
+- **CBR needs a RAR extractor.** CBZ is read with the Python stdlib; CBR is RAR,
+  so reading one requires `unrar`, `bsdtar`, or `7z` on PATH. Without one, CBR
+  files still download and are named correctly — they just aren't readable in-app.
 - **Tested on Linux.** `run.py` handles Windows and macOS paths, the `aria2c.exe`
   lookup and the winget fallback, but has not been run on those platforms — treat
   them as untested rather than supported.

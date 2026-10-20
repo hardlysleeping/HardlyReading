@@ -107,7 +107,7 @@ class Handler(BaseHTTPRequestHandler):
                     "size": os.path.getsize(p),
                     "pages": len(pages),
                     "readable": bool(pages) or p.lower().endswith(".pdf"),
-                    "kind": "cbz" if pages else ("pdf" if p.lower().endswith(".pdf") else "other"),
+                    "kind": "cbz" if pages else ("pdf" if p.lower().endswith(".pdf") else "other"),  # CBR counts as pages
                 })
             return self._send(200, {"dir": j.dir, "files": out})
 

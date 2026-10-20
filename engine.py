@@ -1435,36 +1435,100 @@ def book_key(entry, job=None) -> str:
 
 
 def comic_pages(path: str):
-    """Page names inside a CBZ/CBT, in reading order. Empty for other formats.
+    """Page names inside a CBZ/CBT/.zip, or a CBR, in reading order.
 
     Zip entry order is NOT reliably the page order (uploaders add pages
     incrementally), so pages are sorted naturally by the trailing number in the
     filename: `... 0030.jpg` before `... 0045.jpg`.
+
+    CBR is RAR, which the stdlib cannot read. It is listed through an external
+    extractor (bsdtar, 7z, 7za or unrar) and pages are streamed out one at a
+    time; without one of those installed, a CBR simply has no pages.
     """
-    if not path.lower().endswith((".cbz", ".cbt", ".zip")):
+    low = path.lower()
+    if low.endswith((".cbz", ".cbt", ".zip")):
+        try:
+            with zipfile.ZipFile(path) as z:
+                names = [n for n in z.namelist()
+                         if not n.endswith("/") and n.lower().endswith(IMAGE_EXTS)]
+        except (zipfile.BadZipFile, OSError):
+            return []
+        return sorted(names, key=_natkey)
+
+    if low.endswith((".cbr", ".rar")):
+        out = _rar_list(path)
+        return sorted(out, key=_natkey) if out else []
+
+    return []
+
+
+def _natkey(n):
+    return [int(t) if t.isdigit() else t.lower()
+            for t in re.split(r"(\d+)", n)]
+
+
+def _rar_tool():
+    """First RAR extractor that works, or None.
+
+    unrar is tried first: 7z cannot read every RAR variant (it rejects these
+    RAR4 comic archives outright), so it is only a fallback.
+    """
+    for name, args in (("unrar", ["lb"]), ("bsdtar", ["-tf"]),
+                       ("7z", ["l", "-ba"]), ("7za", ["l", "-ba"])):
+        exe = shutil.which(name)
+        if exe:
+            return exe, args
+    return None
+
+
+def _rar_list(path: str):
+    tool = _rar_tool()
+    if not tool:
         return []
+    exe, args = tool
     try:
-        with zipfile.ZipFile(path) as z:
-            names = [n for n in z.namelist()
-                     if not n.endswith("/") and n.lower().endswith(IMAGE_EXTS)]
-    except (zipfile.BadZipFile, OSError):
+        p = subprocess.run([exe] + args + [path], capture_output=True,
+                           timeout=120, text=True)
+    except (OSError, subprocess.SubprocessError):
         return []
-
-    def natkey(n):
-        return [int(t) if t.isdigit() else t.lower()
-                for t in re.split(r"(\d+)", n)]
-
-    return sorted(names, key=natkey)
+    if p.returncode != 0:
+        return []
+    lines = [ln.strip() for ln in (p.stdout or "").splitlines()]
+    # 7z pads output with archive metadata; keep only page-looking entries.
+    return [ln for ln in lines if ln and ln.lower().endswith(IMAGE_EXTS)]
 
 
 def read_page(path: str, name: str):
     """Bytes + a content type for one page inside the archive."""
-    with zipfile.ZipFile(path) as z:
-        data = z.read(name)
+    if path.lower().endswith((".cbr", ".rar")):
+        data = _rar_read(path, name)
+    else:
+        with zipfile.ZipFile(path) as z:
+            data = z.read(name)
     ext = os.path.splitext(name)[1].lower()
     ctype = {".png": "image/png", ".gif": "image/gif", ".webp": "image/webp",
              ".bmp": "image/bmp"}.get(ext, "image/jpeg")
     return data, ctype
+
+
+def _rar_read(path: str, name: str) -> bytes:
+    """One member from a RAR, streamed to stdout by whichever extractor exists."""
+    tool = _rar_tool()
+    if not tool:
+        raise RuntimeError("no RAR extractor found (install unrar, 7z or bsdtar)")
+    exe, _ = tool
+    base = os.path.basename(exe)
+    if base == "bsdtar":
+        cmd = [exe, "-xOf", path, name]
+    elif base == "unrar":
+        cmd = [exe, "p", "-inul", "-p-", path, name]
+    else:  # 7z / 7za
+        cmd = [exe, "e", "-so", path, name]
+    p = subprocess.run(cmd, capture_output=True, timeout=120)
+    if p.returncode != 0 or not p.stdout:
+        raise RuntimeError((p.stderr or b"").decode("utf-8", "replace").strip()
+                           or "could not extract page")
+    return p.stdout
 
 
 def human_eta(seconds: float) -> str:
