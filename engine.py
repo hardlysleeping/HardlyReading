@@ -1,4 +1,4 @@
-"""HardlyReader — engine: queue, resolver, downloader, verifier.
+"""HardlyReading — engine: queue, resolver, downloader, verifier.
 
 Stdlib only. Runs on Windows / Linux / macOS.
 """
@@ -59,7 +59,7 @@ def user_config_dir() -> str:
         base = os.path.expanduser("~/Library/Application Support")
     else:
         base = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
-    p = os.path.join(base, "hardlyreader")
+    p = os.path.join(base, "hardlyreading")
     os.makedirs(p, exist_ok=True)
     return p
 
@@ -69,8 +69,8 @@ def default_download_dir() -> str:
     for name in ("Downloads", "downloads"):
         p = os.path.join(home, name)
         if os.path.isdir(p):
-            return os.path.join(p, "HardlyReader")
-    return os.path.join(home, "HardlyReader")
+            return os.path.join(p, "HardlyReading")
+    return os.path.join(home, "HardlyReading")
 
 
 STATE_FILE = os.environ.get("IA_STATE") or os.path.join(user_config_dir(), "state.json")
@@ -80,7 +80,7 @@ HISTORY_DB = os.environ.get("IA_HISTORY") or os.path.join(user_config_dir(), "hi
 # ---------------------------------------------------------------- http helpers
 
 def http_json(url: str, timeout: int = 60):
-    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReader/1.0.0"})
+    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/1.0.0"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.load(r)
 

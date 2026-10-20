@@ -1,4 +1,4 @@
-"""HardlyReader — HTTP API + static UI. Stdlib only."""
+"""HardlyReading — HTTP API + static UI. Stdlib only."""
 import json
 import os
 import shutil
@@ -29,7 +29,7 @@ ENGINE = engine.Engine()
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "HardlyReader/1.0.0"
+    server_version = "HardlyReading/1.0.0"
 
     def log_message(self, fmt, *args):
         pass  # quiet
@@ -343,7 +343,7 @@ def main():
     # a job that was mid-download actually continues.
     ENGINE.kick()
 
-    print(f"HardlyReader running at {url}")
+    print(f"HardlyReading running at {url}")
     if host in ("0.0.0.0", "::"):
         print(f"  (also reachable on your LAN — listening on all interfaces)")
 
