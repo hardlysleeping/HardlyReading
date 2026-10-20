@@ -1,4 +1,4 @@
-# HardlyReader
+# HardlyReading
 
 Desktop-friendly web app for grabbing magazines, comics and PDFs from
 [Internet Archive](https://archive.org) and reading them locally.
@@ -81,13 +81,13 @@ if anything is missing — it will not half-start.
 Files land in your downloads folder, under one subfolder per series:
 
 ```
-~/Downloads/HardlyReader/
+~/Downloads/HardlyReading/
 └── MAD Magazine/
     ├── MAD Magazine 179 (1976).cbz
     └── MAD Magazine 180 (1976).cbz
 ```
 
-Point Komga (or any comic server) at `~/Downloads/HardlyReader` and each
+Point Komga (or any comic server) at `~/Downloads/HardlyReading` and each
 subfolder becomes a series.
 
 ## The reader
@@ -105,7 +105,7 @@ in the same place whatever device or browser you open it from.
 | What | Windows | macOS | Linux |
 |---|---|---|---|
 | Settings & queue | `%APPDATA%\hardlyreader` | `~/Library/Application Support/hardlyreader` | `~/.config/hardlyreader` |
-| Downloads | `%USERPROFILE%\Downloads\HardlyReader` | `~/Downloads/HardlyReader` | `~/Downloads/HardlyReader` |
+| Downloads | `%USERPROFILE%\Downloads\HardlyReading` | `~/Downloads/HardlyReading` | `~/Downloads/HardlyReading` |
 
 ## Limitations
 

@@ -1,4 +1,4 @@
-"""HardlyReader — engine: queue, resolver, downloader, verifier.
+"""HardlyReading — engine: queue, resolver, downloader, verifier.
 
 Stdlib only. Runs on Windows / Linux / macOS.
 """
@@ -68,8 +68,8 @@ def default_download_dir() -> str:
     for name in ("Downloads", "downloads"):
         p = os.path.join(home, name)
         if os.path.isdir(p):
-            return os.path.join(p, "HardlyReader")
-    return os.path.join(home, "HardlyReader")
+            return os.path.join(p, "HardlyReading")
+    return os.path.join(home, "HardlyReading")
 
 
 STATE_FILE = os.environ.get("IA_STATE") or os.path.join(user_config_dir(), "state.json")
@@ -79,7 +79,7 @@ HISTORY_DB = os.environ.get("IA_HISTORY") or os.path.join(user_config_dir(), "hi
 # ---------------------------------------------------------------- http helpers
 
 def http_json(url: str, timeout: int = 60):
-    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReader/0.1"})
+    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/0.1"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.load(r)
 
