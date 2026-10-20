@@ -1,0 +1,321 @@
+"""HardlyReader — HTTP API + static UI. Stdlib only."""
+import json
+import os
+import socket
+import sys
+import urllib.parse
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, HERE)
+
+import engine  # noqa: E402
+
+
+def find_free_port(start=8788, host="127.0.0.1"):
+    for p in range(start, start + 50):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                s.bind((host if host not in ("0.0.0.0", "::") else "127.0.0.1", p))
+                return p
+            except OSError:
+                continue
+    raise RuntimeError("no free port")
+
+
+ENGINE = engine.Engine()
+
+
+class Handler(BaseHTTPRequestHandler):
+    server_version = "HardlyReader/0.1"
+
+    def log_message(self, fmt, *args):
+        pass  # quiet
+
+    # ---------- helpers
+    def _send(self, code, body, ctype="application/json"):
+        if isinstance(body, (dict, list)):
+            body = json.dumps(body).encode()
+        elif isinstance(body, str):
+            body = body.encode()
+        self.send_response(code)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _html(self, name):
+        p = os.path.join(HERE, name)
+        try:
+            with open(p, "rb") as fh:
+                self._send(200, fh.read(), "text/html; charset=utf-8")
+        except OSError:
+            self._send(404, "not found", "text/plain")
+
+    def _body(self):
+        n = int(self.headers.get("Content-Length") or 0)
+        if not n:
+            return {}
+        try:
+            return json.loads(self.rfile.read(n))
+        except ValueError:
+            return {}
+
+    # ---------- routes
+    def do_GET(self):
+        u = urllib.parse.urlparse(self.path)
+        qs = urllib.parse.parse_qs(u.query)
+        path = u.path
+
+        if path in ("/", "/index.html"):
+            return self._html("index.html")
+
+        if path == "/api/state":
+            return self._send(200, ENGINE.snapshot())
+
+        if path == "/api/search":
+            query = (qs.get("q") or [""])[0].strip()
+            if not query:
+                return self._send(400, {"error": "empty query"})
+            try:
+                page = int((qs.get("page") or ["1"])[0])
+                filt = (qs.get("filter") or ["all"])[0]
+                if filt not in ("all", "collection", "bundle"):
+                    filt = "all"
+                res = engine.search_documents(query, page=page, kind=filt)
+                return self._send(200, res)
+            except Exception as e:  # noqa: BLE001
+                return self._send(502, {"error": str(e)})
+
+        if path == "/api/files":
+            jid = (qs.get("id") or [""])[0]
+            j = ENGINE.get(jid)
+            if not j or not j.dir or not os.path.isdir(j.dir):
+                return self._send(404, {"error": "no files for that job"})
+            out = []
+            for e in j.items:
+                if e.get("skip"):
+                    continue
+                p = os.path.join(j.dir, e.get("outname") or "")
+                if not os.path.isfile(p):
+                    continue
+                pages = engine.comic_pages(p)
+                out.append({
+                    "name": e.get("outname"),
+                    "size": os.path.getsize(p),
+                    "pages": len(pages),
+                    "readable": bool(pages) or p.lower().endswith(".pdf"),
+                    "kind": "cbz" if pages else ("pdf" if p.lower().endswith(".pdf") else "other"),
+                })
+            return self._send(200, {"dir": j.dir, "files": out})
+
+        if path == "/api/page":
+            jid = (qs.get("id") or [""])[0]
+            name = (qs.get("file") or [""])[0]
+            try:
+                idx = int((qs.get("page") or ["0"])[0])
+            except ValueError:
+                idx = 0
+            j = ENGINE.get(jid)
+            if not j or not j.dir:
+                return self._send(404, {"error": "no such job"})
+            # Never trust the client with a path: resolve inside the job folder.
+            target = os.path.realpath(os.path.join(j.dir, os.path.basename(name)))
+            if not target.startswith(os.path.realpath(j.dir)):
+                return self._send(400, {"error": "bad path"})
+            pages = engine.comic_pages(target)
+            if not pages:
+                return self._send(404, {"error": "no pages"})
+            idx = max(0, min(idx, len(pages) - 1))
+            try:
+                if (qs.get("list") or [""])[0] == "1":
+                    return self._send(200, {"pages": pages, "count": len(pages)})
+                data, ctype = engine.read_page(target, pages[idx])
+                return self._send(200, data, ctype)
+            except Exception as e:  # noqa: BLE001
+                return self._send(500, {"error": str(e)})
+
+        if path == "/api/book":
+            # Raw file for the browser's own PDF viewer.
+            jid = (qs.get("id") or [""])[0]
+            name = (qs.get("file") or [""])[0]
+            j = ENGINE.get(jid)
+            if not j or not j.dir:
+                return self._send(404, {"error": "no such job"})
+            target = os.path.realpath(os.path.join(j.dir, os.path.basename(name)))
+            if not target.startswith(os.path.realpath(j.dir)) or not os.path.isfile(target):
+                return self._send(404, {"error": "not found"})
+            try:
+                with open(target, "rb") as fh:
+                    data = fh.read()
+            except OSError as e:
+                return self._send(500, {"error": str(e)})
+            self.send_response(200)
+            self.send_header("Content-Type", "application/pdf")
+            self.send_header("Content-Length", str(len(data)))
+            self.send_header("Content-Disposition", "inline")
+            self.end_headers()
+            self.wfile.write(data)
+            return
+
+        if path == "/api/library":
+            # Every downloaded file across all jobs.
+            items = []
+            for j in ENGINE.jobs:
+                if j.status != "done" or not j.dir or not os.path.isdir(j.dir):
+                    continue
+                series = j.series or j.label
+                for e in j.items:
+                    if e.get("skip"):
+                        continue
+                    p = os.path.join(j.dir, e.get("outname") or "")
+                    if not os.path.isfile(p):
+                        continue
+                    pages = engine.comic_pages(p)
+                    key = engine.book_key(e)
+                    done = ENGINE.get_progress(key)
+                    items.append({
+                        "job": j.id,
+                        "key": key,
+                        "series": series,
+                        "name": e.get("outname"),
+                        "size": os.path.getsize(p),
+                        "pages": len(pages),
+                        "kind": "cbz" if pages else ("pdf" if p.lower().endswith(".pdf") else "other"),
+                        "readable": bool(pages) or p.lower().endswith(".pdf"),
+                        "progress": done,
+                        "finished": bool(pages) and done >= len(pages) - 1,
+                    })
+            items.sort(key=lambda x: (x["series"].lower(), x["name"] or ""))
+            return self._send(200, {"items": items, "count": len(items)})
+
+        if path == "/api/progress":
+            key = (qs.get("key") or [""])[0]
+            return self._send(200, {"page": ENGINE.get_progress(key)})
+
+        if path == "/api/job":
+            jid = (qs.get("id") or [""])[0]
+            j = ENGINE.get(jid)
+            if not j:
+                return self._send(404, {"error": "no such job"})
+            return self._send(200, {
+                "job": j.summary(),
+                "items": j.items,
+            })
+
+        return self._send(404, {"error": "not found"})
+
+    def do_POST(self):
+        u = urllib.parse.urlparse(self.path)
+        path = u.path
+        body = self._body()
+
+        if path == "/api/add":
+            urls = body.get("urls") or []
+            if isinstance(urls, str):
+                urls = [u.strip() for u in urls.splitlines() if u.strip()]
+            added, errors = [], []
+            for url in urls:
+                try:
+                    added.append(ENGINE.add(url))
+                except Exception as e:  # noqa: BLE001
+                    errors.append({"url": url, "error": str(e)})
+            return self._send(200, {"added": added, "errors": errors})
+
+        if path == "/api/progress":
+            ENGINE.set_progress(body.get("key") or "",
+                                int(body.get("page") or 0),
+                                int(body.get("total") or 0))
+            return self._send(200, {"ok": True})
+
+        if path == "/api/retry":
+            jid = body.get("id") or ""
+            j = ENGINE.get(jid)
+            if not j:
+                return self._send(404, {"error": "no such job"})
+            with ENGINE.lock:
+                j.status = "queued"
+                j.next_try_at = 0
+                j.fatal = False
+                j.error = ""
+                j.message = "queued again"
+                ENGINE.save_state()
+            ENGINE.kick()
+            return self._send(200, {"job": j.summary()})
+
+        if path == "/api/confirm":
+            jid = body.get("id") or ""
+            try:
+                return self._send(200, {"job": ENGINE.confirm(jid)})
+            except Exception as e:  # noqa: BLE001
+                return self._send(400, {"error": str(e)})
+
+        if path == "/api/open-folder":
+            import engine as _e
+            jid = body.get("id") or ""
+            j = ENGINE.get(jid)
+            target = (j.dir if j and j.dir else ENGINE.settings["download_dir"])
+            ok = _e.open_folder(target)
+            return self._send(200, {"opened": ok, "path": target})
+
+        if path == "/api/settings":
+            with ENGINE.lock:
+                for k, v in (body or {}).items():
+                    if k in ENGINE.settings:
+                        ENGINE.settings[k] = v
+                ENGINE.save_state()
+            return self._send(200, {"settings": ENGINE.settings})
+
+        if path == "/api/pause":
+            ENGINE.paused = bool(body.get("paused"))
+            if not ENGINE.paused:
+                ENGINE.kick()
+            return self._send(200, {"paused": ENGINE.paused})
+
+        return self._send(404, {"error": "not found"})
+
+
+def main():
+    argv = sys.argv[1:]
+
+    def opt(flag, default):
+        if flag in argv:
+            i = argv.index(flag)
+            if i + 1 < len(argv):
+                return argv[i + 1]
+        return default
+
+    want = int(opt("--port", os.environ.get("IA_PORT", "8788")))
+    host = opt("--host", os.environ.get("IA_HOST", "127.0.0.1"))
+    no_browser = "--no-browser" in argv
+
+    port = find_free_port(want, host)
+    srv = ThreadingHTTPServer((host, port), Handler)
+    url = f"http://{'127.0.0.1' if host in ('0.0.0.0', '::') else host}:{port}"
+
+    # Resume anything interrupted by the last shutdown, and start the worker so
+    # a job that was mid-download actually continues.
+    ENGINE.kick()
+
+    print(f"HardlyReader running at {url}")
+    if host in ("0.0.0.0", "::"):
+        print(f"  (also reachable on your LAN — listening on all interfaces)")
+
+    if not no_browser:
+        try:
+            import webbrowser
+            webbrowser.open(url)
+        except Exception:  # noqa: BLE001
+            pass
+
+    try:
+        srv.serve_forever()
+    except KeyboardInterrupt:
+        print("\nstopping")
+        srv.shutdown()
+
+
+if __name__ == "__main__":
+    main()

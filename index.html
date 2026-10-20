@@ -1,0 +1,823 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>HardlyReader</title>
+<style>
+  :root{
+    --bg:#0f1115; --panel:#171a21; --panel2:#1e222b; --line:#282e3a;
+    --text:#e8ecf3; --dim:#8b95a8; --accent:#4f8cff; --accent2:#7aa9ff;
+    --ok:#3ecf8e; --warn:#f0b429; --err:#ef5b5b; --radius:12px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{
+    background:var(--bg); color:var(--text);
+    font:15px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Inter,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  a{color:var(--accent2)}
+  button{font:inherit;cursor:pointer}
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-thumb{background:#2d3442;border-radius:6px}
+  ::-webkit-scrollbar-track{background:transparent}
+
+  .wrap{max-width:1080px;margin:0 auto;padding:28px 22px 80px}
+
+  header{display:flex;align-items:center;gap:14px;margin-bottom:26px}
+  .logo{
+    width:38px;height:38px;border-radius:10px;flex:none;
+    background:linear-gradient(135deg,#4f8cff,#8b5cf6);
+    display:grid;place-items:center;font-weight:800;font-size:17px;color:#fff;
+  }
+  h1{font-size:19px;margin:0;font-weight:650;letter-spacing:-.01em}
+  .sub{font-size:12.5px;color:var(--dim);margin-top:1px}
+  .spacer{flex:1}
+  .chip{
+    display:inline-flex;align-items:center;gap:7px;
+    background:var(--panel);border:1px solid var(--line);
+    padding:7px 13px;border-radius:999px;font-size:13px;color:var(--dim);
+  }
+  .dot{width:7px;height:7px;border-radius:50%;background:var(--dim);flex:none}
+  .dot.live{background:var(--ok);box-shadow:0 0 0 3px rgba(62,207,142,.15)}
+  .dot.work{background:var(--accent);box-shadow:0 0 0 3px rgba(79,140,255,.15);
+    animation:pulse 1.4s ease-in-out infinite}
+  @keyframes pulse{50%{opacity:.35}}
+
+  .card{
+    background:var(--panel);border:1px solid var(--line);
+    border-radius:var(--radius);padding:20px;margin-bottom:16px;
+  }
+  .card h2{font-size:13px;font-weight:650;color:var(--dim);
+    text-transform:uppercase;letter-spacing:.06em;margin:0 0 13px}
+
+  textarea{
+    width:100%;min-height:104px;resize:vertical;
+    background:var(--bg);border:1px solid var(--line);border-radius:10px;
+    color:var(--text);padding:13px 14px;font:14px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace;
+    outline:none;transition:border-color .15s;
+  }
+  textarea:focus{border-color:var(--accent)}
+  textarea::placeholder{color:#5c6577}
+
+  .row{display:flex;gap:10px;align-items:center;margin-top:13px;flex-wrap:wrap}
+  .btn{
+    background:var(--accent);color:#fff;border:0;border-radius:9px;
+    padding:10px 18px;font-weight:600;font-size:14px;
+    transition:background .15s,opacity .15s;
+  }
+  .btn:hover{background:#3f7cf0}
+  .btn:disabled{opacity:.5;cursor:default}
+  .btn.ghost{background:transparent;color:var(--text);border:1px solid var(--line)}
+  .btn.ghost:hover{background:var(--panel2)}
+
+  input[type=search],input[type=text]{
+    background:var(--bg);border:1px solid var(--line);border-radius:9px;
+    color:var(--text);padding:10px 13px;font:14px inherit;outline:none;flex:1;min-width:180px;
+  }
+  input:focus{border-color:var(--accent)}
+
+  .hint{font-size:12.5px;color:var(--dim);margin-top:11px}
+  .hint code{background:var(--panel2);padding:1px 5px;border-radius:4px;font-size:12px}
+
+  /* job list */
+  .job{
+    display:grid;grid-template-columns:1fr auto;gap:14px;
+    background:var(--panel2);border:1px solid var(--line);
+    border-radius:10px;padding:14px 16px;margin-bottom:9px;
+  }
+  .job .title{font-weight:600;font-size:14.5px;margin-bottom:3px;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .jright{display:flex;flex-direction:column;align-items:flex-end;gap:8px}
+  .btn.sm{padding:7px 14px;font-size:13px;border-radius:8px}
+  .job .meta{font-size:12.5px;color:var(--dim);display:flex;gap:10px;flex-wrap:wrap}
+  .job .scoped{font-size:11.5px;color:#5f6b80;margin-top:5px;
+    font-family:ui-monospace,SFMono-Regular,Menlo,monospace;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pill{
+    font-size:11.5px;font-weight:600;padding:4px 10px;border-radius:999px;
+    background:#2a303c;color:var(--dim);white-space:nowrap;
+  }
+  .pill.resolving,.pill.downloading,.pill.verifying{background:rgba(79,140,255,.16);color:var(--accent2)}
+  .pill.planned{background:rgba(240,180,41,.14);color:var(--warn)}
+  .pill.done{background:rgba(62,207,142,.14);color:var(--ok)}
+  .pill.failed{background:rgba(239,91,91,.14);color:var(--err)}
+
+  .bar{height:5px;background:#0b0d11;border-radius:3px;overflow:hidden;margin-top:11px}
+  .bar > i{display:block;height:100%;background:var(--accent);
+    border-radius:3px;transition:width .4s ease}
+
+  /* results grid */
+  .results{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-top:14px}
+  .res{background:var(--panel2);border:1px solid var(--line);border-radius:10px;
+    overflow:hidden;cursor:pointer;transition:border-color .15s,transform .1s}
+  .res:hover{border-color:var(--accent);transform:translateY(-1px)}
+  .res img{width:100%;height:110px;object-fit:cover;display:block;background:#0b0d11}
+  .res .body{padding:9px 10px 11px}
+  .res .t{font-size:12.5px;font-weight:600;line-height:1.35;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .res .y{font-size:11px;color:var(--dim);margin-top:3px}
+
+  .empty{color:var(--dim);font-size:13.5px;padding:22px 0;text-align:center}
+  .toast{
+    position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(90px);
+    background:var(--panel2);border:1px solid var(--line);border-radius:10px;
+    padding:11px 18px;font-size:13.5px;box-shadow:0 8px 30px rgba(0,0,0,.5);
+    transition:transform .25s ease;z-index:50;pointer-events:none;
+  }
+  .toast.show{transform:translateX(-50%) translateY(0)}
+  .tabbar{display:flex;gap:6px;margin-bottom:18px}
+  .tab{background:transparent;border:0;color:var(--dim);padding:9px 16px;
+    border-radius:9px;font-weight:600;font-size:14px}
+  .tab.on{background:var(--panel);color:var(--text);border:1px solid var(--line)}
+  .pager{display:flex;gap:8px;align-items:center;justify-content:center;margin-top:14px}
+  .pager button{background:var(--panel2);border:1px solid var(--line);color:var(--text);
+    border-radius:8px;width:34px;height:32px}
+  .pager button:disabled{opacity:.35}
+  .pager span{font-size:13px;color:var(--dim);min-width:110px;text-align:center}
+
+  .chipf{
+    background:transparent;border:1px solid var(--line);color:var(--dim);
+    border-radius:999px;padding:6px 14px;font-size:13px;font-weight:550;
+    transition:all .15s;
+  }
+  .chipf:hover{border-color:#3a4353;color:var(--text)}
+  .chipf.on{background:rgba(79,140,255,.14);border-color:var(--accent);
+    color:var(--accent2)}
+  /* reader overlay */
+  .rwrap{position:fixed;inset:0;background:#07080b;z-index:100;
+    display:flex;flex-direction:column}
+  .rbar{display:flex;align-items:center;gap:12px;padding:10px 16px;
+    background:var(--panel);border-bottom:1px solid var(--line);flex:none}
+  .rbar .t{font-size:13.5px;font-weight:600;overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap}
+  .rbar .sp{flex:1}
+  .rbar button{background:var(--panel2);border:1px solid var(--line);
+    color:var(--text);border-radius:7px;padding:6px 12px;font-size:13px}
+  .rbar button:disabled{opacity:.35}
+  .rstage{flex:1;min-height:0;overflow:auto;display:flex;
+    align-items:center;justify-content:center;padding:20px}
+  /* Fit the whole page in the viewport with margins. `max-height` on a flex
+     child needs a min-height:0 parent or it resolves against content and the
+     scan opens zoomed in. */
+  .rstage img{display:block;max-width:min(100%,1200px);
+    max-height:calc(100vh - 130px);width:auto;height:auto;
+    object-fit:contain;
+    box-shadow:0 4px 30px rgba(0,0,0,.6)}
+  .rstage.zoomed{display:block;overflow:auto;text-align:center}
+  .rstage.zoomed img{max-width:none;max-height:none;width:auto;margin:0 auto}
+  .rpage{font-size:13px;color:var(--dim);min-width:88px;text-align:center}
+  .rlist{flex:1;overflow:auto;padding:18px 22px}
+  .rfile{display:flex;align-items:center;gap:12px;padding:11px 14px;
+    background:var(--panel2);border:1px solid var(--line);border-radius:9px;
+    margin-bottom:8px;cursor:pointer}
+  .rfile:hover{border-color:var(--accent)}
+  .rfile .nm{flex:1;font-size:13.5px;overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap}
+  .rfile .pg{font-size:12px;color:var(--dim);white-space:nowrap}
+  .rfile.dis{opacity:.45;cursor:default}
+  .rfile.dis:hover{border-color:var(--line)}
+  .libgroup{font-size:12px;font-weight:700;color:var(--dim);
+    text-transform:uppercase;letter-spacing:.06em;margin:16px 0 8px}
+  .libgroup:first-child{margin-top:4px}
+  .libfin{font-size:11px;color:var(--ok);background:rgba(62,207,142,.12);
+    padding:2px 8px;border-radius:999px;white-space:nowrap}
+  .libpg{font-size:11px;color:var(--accent2);background:rgba(79,140,255,.12);
+    padding:2px 8px;border-radius:999px;white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div class="logo">AG</div>
+    <div>
+      <h1>HardlyReader</h1>
+      <div class="sub">Internet Archive · magazines, comics &amp; PDFs</div>
+    </div>
+    <div class="spacer"></div>
+    <div class="chip"><span class="dot" id="statusDot"></span><span id="statusText">Starting…</span></div>
+  </header>
+
+  <div class="tabbar">
+    <button class="tab on" data-tab="queue">Downloads</button>
+    <button class="tab" data-tab="search">Search archive.org</button>
+    <button class="tab" data-tab="library">Library</button>
+  </div>
+
+  <!-- QUEUE VIEW -->
+  <div id="view-queue">
+    <div class="card">
+      <h2>Paste links</h2>
+      <textarea id="paste" placeholder="Paste archive.org links, one per line:
+
+https://archive.org/details/some-collection
+https://archive.org/details/some-item
+https://archive.org/search?query=…"></textarea>
+      <div class="row">
+        <button class="btn" id="addBtn">Add to queue</button>
+        <button class="btn ghost" id="pauseBtn">Pause</button>
+      </div>
+      <div class="hint">A <code>/details/</code> link is grabbed in full. Collection links pull every member.</div>
+    </div>
+
+    <div class="card">
+      <h2>Queue</h2>
+      <div id="jobs"><div class="empty">Nothing queued yet.</div></div>
+    </div>
+  </div>
+
+  <!-- SEARCH VIEW -->
+  <div id="view-search" style="display:none">
+    <div class="card">
+      <h2>Search the Internet Archive</h2>
+      <div class="row" style="margin-top:0">
+        <input type="search" id="q" placeholder="e.g. Mad Magazine">
+        <button class="btn" id="searchBtn">Search</button>
+      </div>
+      <div class="row" id="filters">
+        <button class="chipf on" data-f="all">All documents</button>
+        <button class="chipf" data-f="collection">Collections</button>
+        <button class="chipf" data-f="bundle">Multi-issue listings</button>
+      </div>
+      <div id="searchMeta" class="hint"></div>
+      <div class="row" id="addAllRow" style="display:none">
+        <button class="btn" id="addAllBtn">Add all results to queue</button>
+        <span class="hint" style="margin:0" id="addAllHint"></span>
+      </div>
+      <div class="results" id="results"></div>
+      <div class="pager" id="pager" style="display:none">
+        <button id="prev">‹</button>
+        <span id="pageLabel"></span>
+        <button id="next">›</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- LIBRARY VIEW -->
+  <div id="view-library" style="display:none">
+    <div class="card">
+      <div class="row" style="margin-top:0;justify-content:space-between">
+        <h2 style="margin:0">Your library</h2>
+        <input type="search" id="libQ" placeholder="Filter…" style="max-width:240px">
+      </div>
+      <div id="libMeta" class="hint"></div>
+      <div id="libList"></div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+"use strict";
+const $ = id => document.getElementById(id);
+let lastState = null;
+let tickTimer = null;
+
+/* ---------- helpers ---------- */
+function toast(msg){
+  const t = $("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  clearTimeout(t._h);
+  t._h = setTimeout(()=>t.classList.remove("show"), 2600);
+}
+function fmtBytes(n){
+  if(!n) return "0 B";
+  const u = ["B","KB","MB","GB","TB"];
+  let i=0;
+  while(n>=1024 && i<u.length-1){ n/=1024; i++; }
+  return (i<2 ? n.toFixed(0) : n.toFixed(1)) + " " + u[i];
+}
+async function api(path, opts){
+  const r = await fetch(path, opts);
+  if(!r.ok){
+    let msg = r.status + " " + r.statusText;
+    try { const j = await r.json(); if(j.error) msg = j.error; } catch(e){}
+    throw new Error(msg);
+  }
+  return r.json();
+}
+function esc(s){
+  return String(s==null?"":s).replace(/[&<>"']/g, c =>
+    ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+}
+
+/* ---------- tabs ---------- */
+document.querySelectorAll(".tab").forEach(t=>{
+  t.onclick = ()=>{
+    document.querySelectorAll(".tab").forEach(x=>x.classList.toggle("on", x===t));
+    const tab = t.dataset.tab;
+    $("view-queue").style.display = tab==="queue" ? "" : "none";
+    $("view-search").style.display = tab==="search" ? "" : "none";
+    $("view-library").style.display = tab==="library" ? "" : "none";
+    if(tab === "library") loadLibrary();
+  };
+});
+
+/* ---------- queue rendering ---------- */
+const STATUS_LABEL = {
+  queued:"Waiting", resolving:"Looking up", planned:"Ready",
+  downloading:"Downloading", verifying:"Verifying",
+  done:"Done", failed:"Failed", cancelled:"Cancelled"
+};
+
+function renderJobs(st){
+  const host = $("jobs");
+  const jobs = (st.jobs||[]).slice().reverse();
+  if(!jobs.length){
+    host.innerHTML = '<div class="empty">Nothing queued yet.</div>';
+    return;
+  }
+  const html = jobs.map(j=>{
+    const pct = j.total_bytes ? Math.min(100, (j.done_bytes/j.total_bytes)*100) : 0;
+    const bits = [];
+    if(j.n_items) bits.push(`${j.n_items} item${j.n_items===1?"":"s"}`);
+    if(j.total_bytes) bits.push(fmtBytes(j.total_bytes));
+    if(j.skipped) bits.push(`${j.skipped} duplicate${j.skipped===1?"":"s"} skipped`);
+    if(j.message) bits.push(j.message);
+    if(j.error) bits.push(j.error);
+    if(j.fits === false){
+      bits.push(`not enough space (${fmtBytes(j.free_bytes)} free)`);
+    }
+    const bar = (j.status==="downloading"||j.status==="done"||j.status==="verifying")
+      ? `<div class="bar"><i style="width:${pct}%"></i></div>` : "";
+    const scoped = j.scoped_query && j.scoped_query !== j.label
+      ? `<div class="scoped">${esc(j.scoped_query)}</div>` : "";
+    let acts = "";
+    if(j.status === "planned"){
+      // Refuse to start a grab that cannot fit, rather than filling the disk
+      // halfway through and leaving a broken library behind.
+      acts = `<button class="btn sm" data-confirm="${esc(j.id)}"
+                ${j.fits === false ? "disabled" : ""}>Download</button>`;
+    } else if(j.status === "done"){
+      acts = `<button class="btn ghost sm" data-open="${esc(j.id)}">Open folder</button>`
+           + `<button class="btn ghost sm" data-read="${esc(j.id)}">Read</button>`;
+    } else if(j.status === "failed"){
+      acts = `<button class="btn ghost sm" data-retry="${esc(j.id)}">Retry</button>`;
+    }
+    return `<div class="job">
+      <div>
+        <div class="title">${esc(j.series || j.label)}</div>
+        <div class="meta">${bits.map(esc).join(" · ")}</div>
+        ${scoped}
+        ${bar}
+      </div>
+      <div class="jright">
+        <span class="pill ${esc(j.status)}">${esc(STATUS_LABEL[j.status]||j.status)}</span>
+        ${acts}
+      </div>
+    </div>`;
+  }).join("");
+  host.innerHTML = html;
+}
+
+/* Job card actions are delegated: the list is re-rendered on every poll, so a
+   per-button handler would be destroyed 1.2s after it is attached. */
+document.addEventListener("click", async (e)=>{
+  const cb = e.target.closest("[data-confirm]");
+  if(cb){
+    cb.disabled = true;
+    try{
+      await api("/api/confirm", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({id: cb.dataset.confirm})
+      });
+      toast("Downloading…");
+      tick();
+    }catch(err){ toast(err.message); cb.disabled = false; }
+    return;
+  }
+  const ob = e.target.closest("[data-open]");
+  if(ob){
+    try{
+      const r = await api("/api/open-folder", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({id: ob.dataset.open})
+      });
+      if(!r.opened) toast("Folder: " + r.path);
+    }catch(err){ toast(err.message); }
+    return;
+  }
+  const rb = e.target.closest("[data-retry]");
+  if(rb){
+    rb.disabled = true;
+    try{
+      await api("/api/retry", {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({id: rb.dataset.retry})
+      });
+      toast("Queued again");
+      tick();
+    }catch(err){ toast(err.message); rb.disabled = false; }
+    return;
+  }
+  const rd = e.target.closest("[data-read]");
+  if(rd){
+    openReader(rd.dataset.read);
+  }
+});
+
+function renderStatus(st){
+  const dot = $("statusDot"), txt = $("statusText");
+  if(st.paused){ dot.className="dot"; txt.textContent="Paused"; return; }
+  if(st.busy){
+    const cur = (st.jobs||[]).find(j=>j.id===st.current);
+    dot.className="dot work";
+    txt.textContent = cur ? (STATUS_LABEL[cur.status]||"Working") + "…" : "Working…";
+    return;
+  }
+  const q = (st.counts||{}).queued||0;
+  dot.className="dot live";
+  txt.textContent = q ? `${q} waiting` : "Idle";
+}
+
+async function tick(){
+  try{
+    const st = await api("/api/state");
+    lastState = st;
+    renderStatus(st);
+    renderJobs(st);
+  }catch(e){
+    $("statusText").textContent = "Disconnected";
+    $("statusDot").className = "dot";
+  }
+}
+
+/* ---------- actions ---------- */
+$("addBtn").onclick = async ()=>{
+  const box = $("paste");
+  const urls = box.value.split("\n").map(s=>s.trim()).filter(Boolean);
+  if(!urls.length){ toast("Paste at least one link"); return; }
+  const btn = $("addBtn");
+  btn.disabled = true; btn.textContent = "Adding…";
+  try{
+    const r = await api("/api/add", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({urls})
+    });
+    if(r.added.length) box.value = "";
+    if(r.errors.length){
+      toast(r.errors.map(e=>e.error).join(" · "));
+    } else {
+      toast(`Added ${r.added.length} link${r.added.length===1?"":"s"}`);
+    }
+    tick();
+  }catch(e){
+    toast("Could not add: " + e.message);
+  }finally{
+    btn.disabled = false; btn.textContent = "Add to queue";
+  }
+};
+
+$("pauseBtn").onclick = async ()=>{
+  const paused = !(lastState && lastState.paused);
+  try{
+    await api("/api/pause", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({paused})
+    });
+    $("pauseBtn").textContent = paused ? "Resume" : "Pause";
+    toast(paused ? "Paused" : "Resumed");
+    tick();
+  }catch(e){ toast(e.message); }
+};
+
+/* ---------- search ---------- */
+let searchPage = 1, searchQ = "", searchFilter = "all", lastResult = null;
+
+async function doSearch(){
+  const q = $("q").value.trim();
+  if(!q) return;
+  searchQ = q; searchPage = 1;
+  await loadPage();
+}
+
+async function loadPage(){
+  const btn = $("searchBtn");
+  btn.disabled = true; btn.textContent = "…";
+  try{
+    const params = new URLSearchParams({q: searchQ, page: String(searchPage)});
+    params.set("filter", searchFilter);
+
+    const r = await api("/api/search?" + params.toString());
+    lastResult = r;
+    const filterNote = r.filtered && r.filtered !== "all"
+      ? ` · showing ${r.visible} of this page matching “${r.filtered}”` : "";
+    $("searchMeta").innerHTML =
+      `${r.numFound.toLocaleString()} result${r.numFound===1?"":"s"} · ` +
+      `query: <code>${esc(r.scoped_query)}</code>${esc(filterNote)}`;
+    const host = $("results");
+    if(!r.docs.length){
+      host.innerHTML = r.filtered && r.filtered !== "all"
+        ? `<div class="empty">No ${esc(r.filtered)} results on this page.
+             <button class="btn ghost" style="margin-left:8px" id="nextForMore">Try next page</button></div>`
+        : '<div class="empty">No results.</div>';
+      const nb = $("nextForMore");
+      if(nb) nb.onclick = ()=>{ searchPage++; loadPage(); };
+    } else {
+      host.innerHTML = r.docs.map(d=>{
+        const kind = d.hold_kind;
+        const isColl = kind === "collection";
+        const isBundle = kind === "bundle";
+        let badge = "";
+        if(isColl) badge = "collection";
+        else if(isBundle) badge = `${d.scans} issues`;
+        else if(kind === "single") badge = "1 issue";
+        const y = [d.year, badge].filter(Boolean).join(" · ");
+        return `<div class="res" data-id="${esc(d.identifier)}" data-kind="${esc(kind||"")}"
+                     title="${esc(d.title)}">
+          <img loading="lazy" src="${esc(d.thumb)}" alt=""
+               onerror="this.style.display='none'">
+          <div class="body">
+            <div class="t">${esc(d.title)}</div>
+            <div class="y${isColl?" coll":""}">${esc(y)}</div>
+          </div>
+        </div>`;
+      }).join("");
+      host.querySelectorAll(".res").forEach(el=>{
+        el.onclick = ()=>{
+          const id = el.dataset.id;
+          const url = el.dataset.kind === "collection"
+            ? `https://archive.org/details/${id}?tab=collection`
+            : `https://archive.org/details/${id}`;
+          addOne(url);
+        };
+      });
+    }
+    const pages = Math.max(1, Math.ceil(r.numFound/24));
+    $("pager").style.display = pages>1 ? "" : "none";
+    $("pageLabel").textContent = `Page ${searchPage} of ${pages}`;
+    $("prev").disabled = searchPage<=1;
+    $("next").disabled = searchPage>=pages;
+
+    // "Add all" only makes sense for a real result set
+    const row = $("addAllRow");
+    if(r.numFound > 0){
+      row.style.display = "";
+      $("addAllBtn").textContent =
+        `Add all ${r.numFound.toLocaleString()} results to queue`;
+      $("addAllHint").textContent =
+        r.numFound > 1000 ? "archive.org returns at most 1000 per query" : "";
+    } else {
+      row.style.display = "none";
+    }
+  }catch(e){
+    $("searchMeta").textContent = "Search failed: " + e.message;
+  }finally{
+    btn.disabled = false; btn.textContent = "Search";
+  }
+}
+
+async function addOne(url){
+  try{
+    await api("/api/add", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({urls:[url]})
+    });
+    toast("Added to queue");
+    tick();
+  }catch(e){ toast(e.message); }
+}
+
+$("addAllBtn").onclick = async ()=>{
+  if(!lastResult) return;
+  const btn = $("addAllBtn");
+  btn.disabled = true;
+  try{
+    // Queue the search itself, not 24 pasted links: the resolver pulls the
+    // whole listing (up to 1000) and applies the same scoping.
+    await api("/api/add", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({urls:[searchQ]})
+    });
+    toast(`Queued “${searchQ}” — resolving the full listing`);
+    tick();
+  }catch(e){ toast(e.message); }
+  finally{ btn.disabled = false; }
+};
+
+$("searchBtn").onclick = doSearch;
+$("q").onkeydown = e=>{ if(e.key==="Enter") doSearch(); };
+$("prev").onclick = ()=>{ if(searchPage>1){ searchPage--; loadPage(); } };
+$("next").onclick = ()=>{ searchPage++; loadPage(); };
+
+/* filter chips */
+document.querySelectorAll(".chipf").forEach(c=>{
+  c.onclick = ()=>{
+    document.querySelectorAll(".chipf").forEach(x=>x.classList.toggle("on", x===c));
+    searchFilter = c.dataset.f;
+    if(searchQ){ searchPage = 1; loadPage(); }
+  };
+});
+
+/* ---------- library ---------- */
+let libItems = [];
+
+async function loadLibrary(){
+  try{
+    const r = await api("/api/library");
+    libItems = r.items || [];
+    renderLibrary();
+  }catch(e){
+    $("libMeta").textContent = "Could not load library: " + e.message;
+  }
+}
+
+function renderLibrary(){
+  const q = ($("libQ").value || "").trim().toLowerCase();
+  const shown = q
+    ? libItems.filter(i => (i.series + " " + i.name).toLowerCase().includes(q))
+    : libItems;
+
+  if(!libItems.length){
+    $("libMeta").textContent = "";
+    $("libList").innerHTML =
+      '<div class="empty">Nothing downloaded yet. Anything you finish shows up here.</div>';
+    return;
+  }
+  const doneCount = libItems.filter(i => i.finished).length;
+  $("libMeta").textContent =
+    `${libItems.length} file${libItems.length===1?"":"s"} · ${doneCount} finished` +
+    (q ? ` · ${shown.length} match` : "");
+
+  // Group by series so a long run reads as one block.
+  const groups = {};
+  for(const it of shown){ (groups[it.series] = groups[it.series] || []).push(it); }
+
+  $("libList").innerHTML = Object.keys(groups).sort().map(se => `
+    <div class="libgroup">${esc(se)}</div>
+    ${groups[se].map(it => {
+      const pct = it.pages ? Math.round(((it.progress||0) / it.pages) * 100) : 0;
+      const badge = it.finished
+        ? '<span class="libfin">finished</span>'
+        : (it.progress ? `<span class="libpg">${it.progress}/${it.pages}</span>` : "");
+      return `<div class="rfile${it.readable?"":" dis"}" data-job="${esc(it.job)}"
+                   data-name="${esc(it.name)}" data-key="${esc(it.key)}">
+        <span class="nm">${esc(it.name)}</span>
+        ${badge}
+        <span class="pg">${it.kind === "cbz" ? it.pages + " pages" : "PDF"}</span>
+      </div>`;
+    }).join("")}
+  `).join("");
+
+  $("libList").querySelectorAll(".rfile").forEach(el => {
+    if(el.classList.contains("dis")) return;
+    const it = libItems.find(x => x.key === el.dataset.key);
+    el.onclick = () => openBook(it);
+  });
+}
+
+$("libQ").oninput = renderLibrary;
+
+/* ---------- reader (ultra-basic preview) ---------- */
+let readerState = null;
+
+async function openReader(jobId){
+  let data;
+  try{ data = await api("/api/files?id=" + encodeURIComponent(jobId)); }
+  catch(e){ toast("No files: " + e.message); return; }
+
+  const files = (data.files || []).filter(f => f.readable);
+  if(!files.length){ toast("Nothing readable yet"); return; }
+
+  if(files.length === 1){
+    const j = (lastState?.jobs || []).find(x => x.id === jobId) || {};
+    return openBook({job: jobId, name: files[0].name, kind: files[0].kind,
+                     key: "", progress: 0});
+  }
+
+  // Several issues: let them pick one.
+  hideReader();
+  const wrap = document.createElement("div");
+  wrap.className = "rwrap"; wrap.id = "reader";
+  wrap.innerHTML = `
+    <div class="rbar">
+      <span class="t">${esc(data.dir.split(/[\\/]/).pop())}</span>
+      <span class="sp"></span>
+      <button id="rclose">Close</button>
+    </div>
+    <div class="rlist">${files.map(f => `
+      <div class="rfile" data-name="${esc(f.name)}" data-kind="${esc(f.kind)}">
+        <span class="nm">${esc(f.name)}</span>
+        <span class="pg">${f.kind === "cbz" ? f.pages + " pages" : "PDF"}</span>
+      </div>`).join("")}</div>`;
+  document.body.appendChild(wrap);
+  $("rclose").onclick = hideReader;
+  wrap.querySelectorAll(".rfile").forEach(el => {
+    el.onclick = () => openBook({job: jobId, name: el.dataset.name,
+                                 kind: el.dataset.kind, key: "", progress: 0});
+  });
+}
+
+function hideReader(){
+  const r = $("reader");
+  if(r) r.remove();
+  document.removeEventListener("keydown", readerKeys);
+  readerState = null;
+}
+
+async function openBook(item){
+  hideReader();
+  const wrap = document.createElement("div");
+  wrap.className = "rwrap"; wrap.id = "reader";
+
+  const qs = `id=${encodeURIComponent(item.job)}&file=${encodeURIComponent(item.name)}`;
+
+  // PDFs are handed to the browser's own viewer — no server-side renderer.
+  if(item.kind === "pdf"){
+    wrap.innerHTML = `
+      <div class="rbar">
+        <span class="t">${esc(item.name)}</span>
+        <span class="sp"></span>
+        <button id="rclose">Close</button>
+      </div>
+      <iframe src="/api/book?${qs}" style="flex:1;border:0;width:100%"></iframe>`;
+    document.body.appendChild(wrap);
+    $("rclose").onclick = hideReader;
+    return;
+  }
+
+  let meta;
+  try{
+    meta = await api(`/api/page?${qs}&list=1`);
+  }catch(e){ toast("Could not open: " + e.message); return; }
+
+  // Resume where this book was left, server-side, so it follows you between
+  // devices rather than living in this browser's localStorage.
+  readerState = {job: item.job, file: item.name, key: item.key,
+                 page: Math.min(item.progress || 0, meta.count - 1),
+                 count: meta.count};
+
+  wrap.innerHTML = `
+    <div class="rbar">
+      <span class="t">${esc(item.name)}</span>
+      <span class="sp"></span>
+      <button id="rprev">‹</button>
+      <span class="rpage" id="rpage"></span>
+      <button id="rnext">›</button>
+      <button id="rclose">Close</button>
+    </div>
+    <div class="rstage"><img id="rimg" alt=""></div>`;
+  document.body.appendChild(wrap);
+
+  $("rprev").onclick = () => stepPage(-1);
+  $("rnext").onclick = () => stepPage(1);
+  $("rclose").onclick = hideReader;
+  document.addEventListener("keydown", readerKeys);
+  paintPage();
+}
+
+function readerKeys(e){
+  if(!readerState) return;
+  if(e.key === "ArrowRight" || e.key === " ") { e.preventDefault(); stepPage(1); }
+  else if(e.key === "ArrowLeft") { e.preventDefault(); stepPage(-1); }
+  else if(e.key === "Escape") { hideReader(); }
+}
+
+function stepPage(d){
+  if(!readerState) return;
+  const p = Math.max(0, Math.min(readerState.count - 1, readerState.page + d));
+  if(p === readerState.page) return;
+  readerState.page = p;
+  paintPage();
+  saveProgress();
+}
+
+let saveTimer = null;
+function saveProgress(){
+  if(!readerState) return;
+  // Debounced: holding an arrow key should not spam the database.
+  clearTimeout(saveTimer);
+  const s = readerState;
+  saveTimer = setTimeout(()=>{
+    api("/api/progress", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({key: s.key, page: s.page, total: s.count})
+    }).catch(()=>{});
+    // Keep the library list in step without a refetch.
+    const it = libItems.find(x => x.key === s.key);
+    if(it){ it.progress = s.page;
+            it.finished = s.count > 0 && s.page >= s.count - 1; }
+  }, 400);
+}
+
+function paintPage(){
+  const s = readerState;
+  if(!s) return;
+  const q = `id=${encodeURIComponent(s.job)}&file=${encodeURIComponent(s.file)}`;
+  $("rimg").src = `/api/page?${q}&page=${s.page}`;
+  $("rpage").textContent = `${s.page + 1} / ${s.count}`;
+  $("rprev").disabled = s.page <= 0;
+  $("rnext").disabled = s.page >= s.count - 1;
+}
+
+/* ---------- boot ---------- */
+document.addEventListener("DOMContentLoaded", ()=>{
+  tick();
+  tickTimer = setInterval(tick, 1200);
+});
+</script>
+</body>
+</html>

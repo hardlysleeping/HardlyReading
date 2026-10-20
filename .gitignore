@@ -1,0 +1,20 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Local state — never commit a queue or reading history
+state.json
+history.db
+history.db-wal
+history.db-shm
+*.aria2
+
+# Downloader binary if someone drops one in
+bin/aria2c
+bin/aria2c.exe
+
+# Downloaded library
+HardlyReader/
