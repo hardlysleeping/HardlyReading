@@ -287,6 +287,52 @@ class Handler(BaseHTTPRequestHandler):
                 })
             return self._send(200, {"dir": d, "files": out})
 
+        if path == "/api/job":
+            # What is inside one job, fetched on demand: the queue poll carries
+            # counts only, because a collection can hold hundreds of items and
+            # /api/state is polled every second.
+            j = ENGINE.get((qs.get("id") or [""])[0])
+            if not j:
+                return self._send(404, {"error": "no such job"})
+            rows = []
+            for e in j.items[:500]:
+                rows.append({
+                    "name": e.get("outname") or e.get("name") or "",
+                    "identifier": e.get("identifier") or "",
+                    "size": e.get("size") or 0,
+                    "skip": bool(e.get("skip")),
+                    "status": e.get("status") or "",
+                })
+            return self._send(200, {"id": j.id, "label": j.label,
+                                    "series": j.series, "total": len(j.items),
+                                    "items": rows})
+
+        if path == "/api/thumb":
+            # Cover for a library row: page 0, downscaled and cached server-side.
+            # Returns 404 rather than a broken image so the UI can fall back to
+            # a placeholder without a second round trip.
+            jid = (qs.get("id") or [""])[0]
+            name = os.path.basename((qs.get("file") or [""])[0])
+            d = self._resolve_dir(jid)
+            if not d or not name:
+                return self._send(404, {"error": "no such file"})
+            target = os.path.realpath(os.path.join(d, name))
+            if not target.startswith(os.path.realpath(d)):
+                return self._send(400, {"error": "bad path"})
+            try:
+                blob = engine.page_thumb(target)
+            except Exception:
+                blob = b""
+            if not blob:
+                return self._send(404, {"error": "no cover"})
+            self.send_response(200)
+            self.send_header("Content-Type", "image/jpeg")
+            self.send_header("Content-Length", str(len(blob)))
+            self.send_header("Cache-Control", "public, max-age=86400")
+            self.end_headers()
+            self.wfile.write(blob)
+            return
+
         if path == "/api/page":
             jid = (qs.get("id") or [""])[0]
             name = (qs.get("file") or [""])[0]

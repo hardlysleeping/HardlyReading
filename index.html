@@ -146,7 +146,8 @@
 
   /* job list */
   .job{
-    display:grid;grid-template-columns:1fr auto;gap:14px;
+    /* three columns: cover (optional), body, controls */
+    display:grid;grid-template-columns:auto 1fr auto;gap:14px;
     background:var(--panel2);border:1px solid var(--line);
     border-radius:10px;padding:14px 16px;margin-bottom:9px;
   }
@@ -198,6 +199,12 @@
   .res .st.wait{color:var(--warn);border-color:rgba(240,180,41,.45)}
   .res .st.fail{color:var(--err);border-color:rgba(239,91,91,.45)}
   .res .st.off{color:var(--dim)}
+  /* Two lines by default so a long blurb cannot push the grid out of shape;
+     clicking the text expands it in place. */
+  .res .d{margin-top:6px;font-size:11.5px;line-height:1.45;color:var(--dim);
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
+    overflow:hidden;cursor:pointer}
+  .res.expand .d{-webkit-line-clamp:unset;display:block}
   .res .acts{display:flex;gap:6px;padding:0 9px 9px}
   .res .acts button{flex:1;background:var(--panel);border:1px solid var(--line);
     color:var(--dim);border-radius:7px;font-size:11px;padding:5px 0;cursor:pointer}
@@ -264,6 +271,16 @@
   .rbar button{background:var(--panel2);border:1px solid var(--line);
     color:var(--text);border-radius:7px;padding:6px 12px;font-size:13px}
   .rbar button:disabled{opacity:.35}
+  .jitems{margin-top:10px;border-top:1px solid var(--line);padding-top:8px;
+    display:flex;flex-direction:column;gap:3px;max-height:260px;overflow:auto}
+  .ji{display:flex;gap:10px;align-items:baseline;font-size:12px;color:var(--dim)}
+  .jinm{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    color:var(--text)}
+  .ji.skip .jinm{color:var(--dim)}
+  .jisz,.jisk{flex:none;font-size:11px}
+  .jisk{color:var(--ok)}
+  .qcov{width:46px;height:62px;object-fit:cover;border-radius:5px;
+    border:1px solid var(--line);background:var(--panel2)}
   .qpos{font-size:11.5px;color:var(--dim);font-variant-numeric:tabular-nums}
   .reorder{display:flex;gap:2px}
   .reorder button{background:transparent;border:1px solid var(--line);color:var(--dim);
@@ -305,6 +322,10 @@
   .rfile.done{opacity:.62}
   .rfile.done:hover{opacity:1}
   .rfile .pg{font-size:12px;color:var(--dim);white-space:nowrap}
+  .lcov{width:34px;height:46px;object-fit:cover;border-radius:4px;flex:none;
+    border:1px solid var(--line);background:var(--panel2)}
+  .lcov-none{display:grid;place-items:center;font-size:9px;color:var(--dim);
+    letter-spacing:.04em}
   .rfile.pending{border-style:dashed}
   .pendstate{font-size:11.5px;color:#f0b429}
   .rfile .btn.sm{padding:5px 10px}
@@ -636,6 +657,11 @@ document.addEventListener("change", (e) => {
   }
 });
 
+// Queue cards expand on click. The open set and the fetched item lists live
+// outside the render, so the 1.2 s poll cannot collapse a card you opened.
+const expandedJobs = new Set();
+const jobItems = {};
+
 const WAITING = new Set(["planned","queued","resume","resolving","downloading","verifying"]);
 
 // Waiting work is shown in run order (that is what the queue means); finished
@@ -644,6 +670,30 @@ function queueRows(){
   const all = (lastState && lastState.jobs) || [];
   return all.filter(j=>WAITING.has(j.status))
             .concat(all.filter(j=>!WAITING.has(j.status)).slice().reverse());
+}
+
+function jobItemsHtml(id){
+  const d = jobItems[id];
+  if(!d) return `<div class="jitems"><span class="hint" style="margin:0">Loading…</span></div>`;
+  if(!d.items.length) return `<div class="jitems"><span class="hint" style="margin:0">Nothing resolved.</span></div>`;
+  const shown = d.items.slice(0, 40);
+  const more = d.items.length > shown.length
+    ? `<div class="hint" style="margin:6px 0 0">…and ${d.items.length - shown.length} more</div>` : "";
+  return `<div class="jitems">${shown.map(it=>`
+    <div class="ji${it.skip ? " skip" : ""}">
+      <span class="jinm">${esc(it.name)}</span>
+      <span class="jisz">${it.size ? fmtBytes(it.size) : ""}</span>
+      ${it.skip ? `<span class="jisk">already have</span>` : ""}
+    </div>`).join("")}${more}</div>`;
+}
+
+async function loadJobItems(id){
+  try{
+    jobItems[id] = await api("/api/job?id=" + encodeURIComponent(id));
+  }catch(e){
+    jobItems[id] = {items: []};
+  }
+  renderJobs(lastState || {});
 }
 
 function renderJobs(st){
@@ -725,12 +775,20 @@ function renderJobs(st){
       acts += `<button class="btn ghost sm" data-remove="${esc(j.id)}"
                       title="Remove from list">✕</button>`;
     }
-    return `<div class="job">
+    // Cover from archive.org's own thumbnail service: a small request and the
+    // cache does the work, so a queue of 20 jobs costs nothing.
+    const cov = j.identifier
+      ? `<img class="qcov" loading="lazy" alt=""
+              src="https://archive.org/services/img/${esc(j.identifier)}"
+              onerror="this.style.display='none'">` : "";
+    return `<div class="job" data-job="${esc(j.id)}">
+      ${cov}
       <div>
         <div class="title">${esc(j.series || j.label)}</div>
         <div class="meta">${bits.map(esc).join(" · ")}</div>
         ${scoped}
         ${bar}
+        ${expandedJobs.has(j.id) ? jobItemsHtml(j.id) : ""}
       </div>
       <div class="jright">
         ${WAITING.has(j.status) && j.pos ? `<span class="qpos" title="Position in the queue">#${j.pos}</span>` : ""}
@@ -741,6 +799,17 @@ function renderJobs(st){
     </div>`;
   }).join("");
   host.innerHTML = html;
+  host.querySelectorAll(".job").forEach(el=>{
+    const id = el.dataset.job;
+    el.onclick = (e)=>{
+      if(e.target.closest("button")) return;   // controls handle themselves
+      // Opening a card that has never been fetched triggers one request; the
+      // answer is kept for the rest of the session.
+      if(expandedJobs.has(id)) expandedJobs.delete(id);
+      else { expandedJobs.add(id); if(!jobItems[id]) loadJobItems(id); }
+      renderJobs(lastState || {});
+    };
+  });
   if($("queuePager")) $("queuePager").innerHTML = pagerBar("queue", jobs.length, "jobs");
 }
 
@@ -1113,6 +1182,7 @@ function renderCards(docs){
       <div class="body">
         <div class="t">${esc(d.title)}</div>
         <div class="y${isColl?" coll":""}">${esc(y)}</div>
+        ${d.desc ? `<div class="d" title="Click to show the whole description">${esc(d.desc)}</div>` : ""}
       </div>
       ${acts}
     </div>`;
@@ -1121,6 +1191,9 @@ function renderCards(docs){
   host.querySelectorAll(".res").forEach(el=>{
     el.onclick = (e)=>{
       if(e.target.closest("button")) return;   // action buttons handle their own click
+      // The blurb is its own control: expand it instead of toggling selection,
+      // which is what clicking anywhere else on the card does.
+      if(e.target.closest(".d")){ el.classList.toggle("expand"); return; }
       toggleSelect(el.dataset.id, el);
     };
   });
@@ -1375,9 +1448,17 @@ function rowHtml(it){
     ? `<div class="rltrack"><i class="${it.finished?"fin":""}" style="width:${pct}%"></i></div>`
     : "";
   const fin = it.finished ? " done" : "";
+  // Page 0, downscaled server-side and cached: a real cover without shipping a
+  // megabyte of scan per row.
+  const cover = (it.downloaded && it.readable && it.kind !== "pdf")
+    ? `<img class="lcov" loading="lazy" alt=""
+             src="/api/thumb?id=${encodeURIComponent(it.job)}&file=${encodeURIComponent(it.name)}"
+             onerror="this.style.visibility='hidden'">`
+    : `<span class="lcov lcov-none" title="${it.kind === "pdf" ? "PDF" : ""}">PDF</span>`;
   return `<div class="rfile${it.readable?"":" dis"}${on}${fin}" data-key="${esc(it.key)}"
                data-job="${esc(it.job)}" data-name="${esc(it.name)}">
     ${tick}
+    ${cover}
     <div class="rlinfo">
       <span class="nm">${esc(it.name)}</span>
       ${bar}

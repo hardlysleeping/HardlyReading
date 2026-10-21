@@ -20,6 +20,7 @@ Stdlib only. Runs on Windows / Linux / macOS.
 import json
 import hashlib
 import html
+import io
 import os
 import re
 import shutil
@@ -176,6 +177,12 @@ class Job:
             "scoped_query": self.scoped_query,
             "dir": self.dir,
             "series": self.series,
+            # First real identifier, so the UI can show the item's cover without
+            # a second request. Falls back to the source URL for jobs whose
+            # items have not resolved yet.
+            "identifier": (next((i.get("identifier") for i in self.items
+                                 if i.get("identifier") and not i.get("skip")), "")
+                           or _ident_from_url(self.source or "")),
             "skipped": len(skipped),
             "free_bytes": free,
             "fits": (free == 0) or (self.total_bytes <= free),
@@ -274,6 +281,12 @@ def scope_query(query: str, mediatype: str = "texts") -> str:
             and not re.search(r"\bcollection\s*:", q, re.I):
         q = f"{q} AND mediatype:({mediatype})"
     return q
+
+
+def _ident_from_url(url: str) -> str:
+    """Pull an archive.org identifier out of a details/ or download/ URL."""
+    m = re.search(r"archive\.org/(?:details|download|embed|stream)/([^/?#]+)", url or "")
+    return m.group(1) if m else ""
 
 
 def plain_text(value, limit: int = 400) -> str:
@@ -1848,6 +1861,59 @@ def _rar_list(path: str):
     lines = [ln.strip() for ln in (p.stdout or "").splitlines()]
     # 7z pads output with archive metadata; keep only page-looking entries.
     return [ln for ln in lines if ln and ln.lower().endswith(IMAGE_EXTS)]
+
+
+# Cached cover thumbnails live under the config directory, never in the app
+# folder, so a read-only install still works.
+THUMB_DIR = os.path.join(user_config_dir(), "thumbs")
+
+
+def page_thumb(path: str, width: int = 96) -> bytes:
+    """A small JPEG of page 0, for the library grid.
+
+    Page images are ~2400 px wide and megabytes each, so ten rows of full-size
+    covers is tens of MB per page. Downscale once and cache on disk, keyed by
+    the archive's size+mtime so a replaced file re-renders.
+    """
+    try:
+        st = os.stat(path)
+    except OSError:
+        return b""
+    key = hashlib.sha1(
+        f"{os.path.realpath(path)}|{st.st_size}|{int(st.st_mtime)}|{width}"
+        .encode()).hexdigest()
+    cache = os.path.join(THUMB_DIR, key + ".jpg")
+    if os.path.isfile(cache):
+        with open(cache, "rb") as fh:
+            return fh.read()
+    pages = comic_pages(path)
+    if not pages:
+        return b""
+    data, _ = read_page(path, pages[0][0] if isinstance(pages[0], (list, tuple))
+                        else pages[0])
+    try:
+        from PIL import Image
+    except ImportError:
+        return b""          # no Pillow: the UI just shows no cover
+    try:
+        with Image.open(io.BytesIO(data)) as im:
+            im = im.convert("RGB")
+            h = max(1, round(width * im.height / max(1, im.width)))
+            im = im.resize((width, h), Image.LANCZOS)
+            out = io.BytesIO()
+            im.save(out, "JPEG", quality=78)
+    except Exception:
+        return b""
+    blob = out.getvalue()
+    try:
+        os.makedirs(THUMB_DIR, exist_ok=True)
+        tmp = cache + ".part"
+        with open(tmp, "wb") as fh:
+            fh.write(blob)
+        os.replace(tmp, cache)
+    except OSError:
+        pass
+    return blob
 
 
 def read_page(path: str, name: str):
