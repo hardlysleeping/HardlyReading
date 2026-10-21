@@ -3,7 +3,16 @@
 Notable changes to HardlyReading. Versions are tagged on GitHub with matching
 release notes.
 
-## [2.5.0] — 2026-10-21
+## [2.5.1] — 2026-10-21
+
+### Changed
+
+- Queue screenshot re-shot on a real waiting queue, so the reorder arrows, the
+  `#1 #2 #3` run-order badges and `the newest 7 of 18` are visible in the docs.
+- New screenshot of the **How many** / **starting from** picker, linked from the
+  README section that explains it.
+
+
 
 ### Added
 

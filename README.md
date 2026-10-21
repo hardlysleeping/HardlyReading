@@ -119,9 +119,13 @@ card has four arrows: to the top, one up, one down, to the bottom:
 A collection can hold hundreds of issues, and you rarely want all of them. The
 **How many** picker beside *Add to queue* takes a preset (5, 10, 25, 50, 100) or
 any number under *other…*, and **starting from** chooses the end: the first
-issue, or the newest. "The newest 25" means the last 25 in reading order, not
-whichever 25 archive.org happened to list first — and the rest never enter the
-queue, so a 5,000-item collection costs nothing.
+issue, or the newest.
+
+![Choosing how many issues](docs/add.png)
+
+"The newest 25" means the last 25 in reading order, not whichever 25 archive.org
+happened to list first — and the rest never enter the queue, so a 5,000-item
+collection costs nothing.
 
 The card then reads `the newest 25 of 312`, and everything outside that count is
 reported as over the limit, not as a duplicate you already had.
