@@ -3,6 +3,16 @@
 Notable changes to HardlyReading. Versions are tagged on GitHub with matching
 release notes.
 
+## [2.1.4] — 2026-10-20
+
+### Fixed
+
+- **Books already in the library showed no description.** The blurb was only
+  stored when a job resolved, so everything queued earlier had none, and the
+  folder scan had no way to know which job a file on disk came from. Jobs now
+  backfill their description once at startup, and files found by the scan are
+  matched back to their job by name so a downloaded book explains itself too.
+
 ## [2.1.3] — 2026-10-20
 
 ### Added
@@ -330,6 +340,7 @@ First release.
 - Built-in CBZ / CBR / PDF reader; CBR needs `unrar`, `bsdtar` or `7z`
 - Cross-platform launcher that finds `aria2c` and opens the browser
 
+[2.1.4]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.1.4
 [2.1.3]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.1.3
 [2.1.2]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.1.2
 [2.1.1]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.1.1

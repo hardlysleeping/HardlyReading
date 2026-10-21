@@ -45,7 +45,7 @@ ENGINE = engine.Engine()
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "HardlyReading/2.1.3"
+    server_version = "HardlyReading/2.1.4"
 
     def log_message(self, fmt, *args):
         pass  # quiet
@@ -180,6 +180,29 @@ class Handler(BaseHTTPRequestHandler):
             "item_url": f"https://archive.org/details/{ident}" if ident else "",
             "desc": (entry or {}).get("desc") or "",
         }
+
+    @staticmethod
+    def _desc_index():
+        """Blurb lookup for files the folder scan finds.
+
+        A file on disk has no memory of the job that fetched it, so its row is
+        built from a bare name. Matching that name against the jobs' items is
+        what lets a downloaded book still explain itself.
+        """
+        out = {}
+        for j in ENGINE.jobs:
+            desc = getattr(j, "desc", "") or ""
+            for e in (j.items or []):
+                d = e.get("desc") or desc
+                if not d:
+                    continue
+                n = (e.get("outname") or e.get("name") or "").lower()
+                if n:
+                    out[n] = d
+                i = (e.get("identifier") or "").lower()
+                if i:
+                    out[i] = d
+        return out
 
     @staticmethod
     def _library_from_jobs():
@@ -434,6 +457,7 @@ class Handler(BaseHTTPRequestHandler):
             # Every downloaded file: first from job state, then anything else
             # sitting in the download folder that no job accounts for.
             items, seen = self._library_from_jobs()
+            known_desc = self._desc_index()
             for f in ENGINE.scan_folder():
                 # Same resolver as the download path, so an empty setting can
                 # never mean "the app directory" here either.
@@ -447,7 +471,8 @@ class Handler(BaseHTTPRequestHandler):
                     series=f["series"],
                     name=f["name"],
                     path=p,
-                    entry={"outname": f["name"]},
+                    entry={"outname": f["name"],
+                           "desc": known_desc.get(f["name"].lower(), "")},
                 ))
             items.sort(key=lambda x: (x["series"].lower(), x["name"] or ""))
             # A missing folder is why a library can look empty when files do
