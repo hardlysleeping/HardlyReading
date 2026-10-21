@@ -3,7 +3,42 @@
 Notable changes to HardlyReading. Versions are tagged on GitHub with matching
 release notes.
 
-## [2.4.3] — 2026-10-20
+## [2.5.0] — 2026-10-21
+
+### Added
+
+- **Queue reordering.** Every waiting card has move-to-top, move-up, move-down
+  and move-to-bottom. The position badge is the run order (`#1` runs next), not
+  a row number, and the card moves the instant you click rather than after the
+  next poll.
+- **How many issues to take.** A count picker beside *Add to queue* — presets or
+  any number — plus a direction: the first issue, or the newest. The listing is
+  trimmed while resolving, so "the newest 25" of a 5,000-item collection never
+  enters the queue in full. The card shows `the newest 25 of 312`.
+- **Pause when the disk is nearly full.** Downloads run in batches that fit,
+  keeping 256 MB spare. If the next file will not fit the job pauses with the
+  numbers ("needs 412 MB but only 240 MB free"), keeps its place, and offers
+  **Resume** — which re-checks and continues, or pauses again, without spending
+  a retry.
+- `IA_DOWNLOAD_DIR` environment override, so a test instance cannot write into
+  the real library.
+
+### Fixed
+
+- **Resume re-resolved the whole listing.** Resuming a paused or interrupted job
+  went back through `/metadata` for every item (a thousand requests on a large
+  search) instead of continuing from the plan it already had.
+- "N duplicates skipped" counted issues dropped by the count the user chose,
+  so "the first 2 of 8" claimed 6 duplicates that were never duplicates.
+- The custom count box stayed visible when the picker was set to a preset:
+  `display:inline-flex` overrode the `hidden` attribute.
+- Move-to-top/up/down/bottom were disabled on the wrong cards, because the guard
+  compared row indexes in the rendered list rather than positions in the run
+  order.
+- An optimistic reorder repainted the new numbers onto the old order, so a card
+  could show `#2` while sitting first.
+
+
 
 ### Changed
 

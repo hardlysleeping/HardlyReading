@@ -345,11 +345,25 @@
   .qcov{width:46px;height:62px;object-fit:cover;border-radius:5px;
     border:1px solid var(--line);background:var(--panel2)}
   .qpos{font-size:11.5px;color:var(--dim);font-variant-numeric:tabular-nums}
+  /* Count picker: a label-wrapped select so the wording stays attached to the
+     control at narrow widths instead of floating off on its own line. */
+  .row.wrap{flex-wrap:wrap;align-items:center}
+  .pick{display:inline-flex;align-items:center;gap:6px;font-size:12px;color:var(--dim)}
+  .pick select,.pick input{background:rgba(255,255,255,.04);border:1px solid var(--line);
+    color:var(--text);font:inherit;font-size:12px;border-radius:7px;padding:4px 6px}
+  .pick input{width:64px}
+  /* `display:inline-flex` above beats the hidden attribute, so a hidden
+     control would still be laid out. This is the rule that actually hides it. */
+  .pick[hidden]{display:none}
   .reorder{display:flex;gap:2px}
-  .reorder button{background:transparent;border:1px solid var(--line);color:var(--dim);
-    font-size:11px;line-height:1;padding:4px 6px;border-radius:5px;cursor:pointer}
+  /* Reorder arrows: the only way to say "run this next", so they get a real
+     hit area and enough contrast to read at a glance. */
+  .reorder button{background:rgba(255,255,255,.05);border:1px solid var(--line);
+    color:var(--text);opacity:.85;font-size:13px;line-height:1;
+    width:26px;height:24px;border-radius:6px;cursor:pointer;
+    display:inline-flex;align-items:center;justify-content:center}
   .reorder button:hover:not(:disabled){color:var(--text);border-color:var(--accent)}
-  .reorder button:disabled{opacity:.28;cursor:default}
+  .reorder button:disabled{opacity:.2;cursor:default;border-color:transparent}
   /* Support: a quiet pill, not a call to action. Small type, no accent border,
      and the logo carries the recognition so the label can stay short. Hover is
      the only thing that lifts it, which keeps the eye on Add/Download. */
@@ -595,11 +609,31 @@
 https://archive.org/details/some-collection
 https://archive.org/details/some-item
 https://archive.org/search?query=…"></textarea>
-      <div class="row">
+      <div class="row wrap">
         <button class="btn" id="addBtn">Add to queue</button>
+        <label class="pick">How many
+          <select id="igLimit">
+            <option value="0">all</option>
+            <option value="5">5</option>
+            <option value="10">10</option>
+            <option value="25">25</option>
+            <option value="50">50</option>
+            <option value="100">100</option>
+            <option value="custom">other…</option>
+          </select>
+        </label>
+        <label class="pick" id="igLimitWrap" hidden>exactly
+          <input id="igLimitN" type="number" min="1" max="9999" value="25" inputmode="numeric">
+        </label>
+        <label class="pick">starting from
+          <select id="igOrder">
+            <option value="oldest">the first issue</option>
+            <option value="newest">the newest issue</option>
+          </select>
+        </label>
         <button class="btn ghost" id="pauseBtn">Pause</button>
       </div>
-      <div class="hint">A <code>/details/</code> link is grabbed in full. Collection links pull every member.</div>
+      <div class="hint">A <code>/details/</code> link is grabbed in full. Collection links pull every member, in reading order — pick how many and from which end above.</div>
       <div class="support">
         <a class="support-btn" href="https://archive.org/donate"
            target="_blank" rel="noopener" title="Every scan comes from the Internet Archive">
@@ -857,16 +891,19 @@ function queueRows(st){
   // job is claimed by exactly one bucket — concat-ing overlapping filters
   // rendered the same card twice.
   const running = all.filter(j => RUNNING.has(j.status));
+  const paused  = all.filter(j => j.status === "paused");
   const failed  = all.filter(j => j.status === "failed");
   const waiting = all.filter(j => WAITING.has(j.status) && !RUNNING.has(j.status));
   const done    = all.filter(j => !RUNNING.has(j.status) &&
                                   j.status !== "failed" &&
+                                  j.status !== "paused" &&
                                   !WAITING.has(j.status)).reverse();
-  return running.concat(failed, waiting, done);
+  return running.concat(paused, failed, waiting, done);
 }
 
 function queueSection(status){
   if(RUNNING.has(status)) return "running";
+  if(status === "paused") return "paused";
   if(status === "failed") return "failed";
   if(WAITING.has(status)) return "waiting";
   return "done";
@@ -881,6 +918,7 @@ const FOLDER_ICON = `<svg viewBox="0 0 16 16" width="13" height="13" fill="none"
 
 const SECTION_TITLE = {
   running: ["Downloading now", "working on these right now"],
+  paused:  ["Paused", "waiting for room on disk — nothing was lost"],
   failed:  ["Needs attention", "these stopped and can be retried"],
   waiting: ["Waiting", "in the order they will run"],
   done:    ["Finished", "newest first"],
@@ -910,6 +948,40 @@ async function loadJobItems(id){
   renderJobs(lastState || {});
 }
 
+/* Reorder the cached snapshot and repaint, so the card lands where the user
+   aimed it without waiting a round-trip. Held off for a moment afterwards so
+   the 1.2s poll cannot repaint the old order over the new one. */
+let optimisticUntil = 0;
+function optimisticMove(id, how){
+  if(!lastState || !Array.isArray(lastState.jobs)) return;
+  const st = JSON.parse(JSON.stringify(lastState));
+  const movable = j => j.status === "planned" || j.status === "queued" ||
+                       j.status === "failed" || j.status === "resume";
+  const list = st.jobs.filter(movable).sort((a,b)=>(a.pos||0)-(b.pos||0));
+  const i = list.findIndex(j => j.id === id);
+  if(i < 0) return;
+  const [job] = list.splice(i, 1);
+  const at = how === "top" ? 0
+           : how === "bottom" ? list.length
+           : how === "up" ? Math.max(0, i - 1)
+           : Math.min(list.length, i + 1);
+  list.splice(at, 0, job);
+  // Renumber, then rewrite the movable slots of the snapshot in the new order.
+  // Replacing values at the same indices keeps every other bucket where it was,
+  // which matters because the renderer groups by status, not by array order.
+  list.forEach((j, n) => { j.pos = n + 1; });
+  const byId = new Map(list.map(j => [j.id, j]));
+  const slots = [];
+  st.jobs.forEach((j, i) => { if(movable(j)) slots.push(i); });
+  // Both lists are the same set in the same starting order, so index n of the
+  // reordered list goes into slot n. (Looking the id up from the slot instead
+  // would write each job back where it already was and move nothing.)
+  slots.forEach((slot, n) => { if(list[n]) st.jobs[slot] = list[n]; });
+  optimisticUntil = Date.now() + 900;
+  lastState = st;
+  renderJobs(st);
+}
+
 function renderJobs(st){
   const host = $("jobs");
   const jobs = queueRows(st);
@@ -928,6 +1000,12 @@ function renderJobs(st){
   const startAt = ui.page * ui.size;
   const slice = jobs.slice(startAt, startAt + ui.size);
 
+  // Number waiting jobs by their place among the waiting ones: a job that runs
+  // next is #1 even when finished jobs sit above it in the list.
+  const runOrder = jobs.filter(j => WAITING.has(j.status) && !RUNNING.has(j.status))
+                       .sort((a,b) => (a.pos || 0) - (b.pos || 0));
+  const runAt = new Map(runOrder.map((j, n) => [j.id, n + 1]));
+
   let lastSection = "";
   const html = slice.map((j, n)=>{
     const i = startAt + n;                 // position in the full list
@@ -936,15 +1014,24 @@ function renderJobs(st){
     // showing a green pill over an empty folder.
     const empty = j.status === "done" && (j.n_items||0) > 0 &&
                   (j.n_disk || 0) === 0;
+    const qpos = runAt.get(j.id);
     const bits = [];
-    if(j.n_items) bits.push(`${j.n_items} item${j.n_items===1?"":"s"}`);
+    const taking = (typeof j.n_take === "number") ? j.n_take : j.n_items;
+    if(j.limit && j.available > j.limit){
+      bits.push(`the ${j.want_order === "newest" ? "newest" : "first"} ${taking} of ${j.available}`);
+    } else if(taking){
+      bits.push(`${taking} item${taking===1?"":"s"}`);
+    }
     if(j.total_bytes) bits.push(fmtBytes(j.total_bytes));
     if(j.skipped) bits.push(`${j.skipped} duplicate${j.skipped===1?"":"s"} skipped`);
     if(j.speed && RUNNING.has(j.status)) bits.push(fmtBytes(j.speed) + "/s");
     if(j.message) bits.push(j.message);
     if(j.error) bits.push(j.error);
-    if(j.fits === false){
-      bits.push(`not enough space (${fmtBytes(j.free_bytes)} free)`);
+    if(j.status === "paused" && j.pause_reason === "space"){
+      // The message already carries both numbers; repeating them here read as
+      // two different stories about the same disk.
+    } else if(j.fits === false){
+      bits.push(`not enough space for all of it (${fmtBytes(j.free_bytes)} free) — it will pause if it runs out`);
     }
     // Only while running: a finished card with a full bar says nothing, and a
     // done-but-empty job looked "complete" while it had downloaded nothing.
@@ -955,10 +1042,11 @@ function renderJobs(st){
     // Work that has not started can be moved. A running download cannot be
     // reordered without promising an order the file transfer cannot honour.
     const movable = (j.status==="planned"||j.status==="queued"||j.status==="failed"||j.status==="resume");
-    // First and last in the waiting block have nowhere to go, so say so
-    // instead of offering a button that quietly does nothing.
-    const firstWait = i === 0 && i < waitCount;
-    const lastWait  = i === waitCount - 1;
+    // First and last in the RUN order have nowhere to go. Positions come from
+    // the run list rather than row indexes: done cards sit between waiting ones
+    // in the rendered slice, so an index comparison disabled the wrong buttons.
+    const firstWait = qpos === 1;
+    const lastWait  = qpos === runOrder.length;
     const reorder = movable ? `<div class="reorder">
         <button data-move="top" data-id="${esc(j.id)}" title="Move to top"
           ${firstWait ? "disabled" : ""}>⤒</button>
@@ -990,6 +1078,11 @@ function renderJobs(st){
       acts = (empty ? "" : `<button class="btn ghost sm ico" data-open="${esc(j.id)}"
                  title="Open folder" aria-label="Open folder">${FOLDER_ICON}</button>`
                         + `<button class="btn ghost sm" data-read="${esc(j.id)}">Read</button>`);
+    } else if(j.status === "paused"){
+      // Nothing failed here: the disk ran out. Resuming is not a retry, so it
+      // does not spend an attempt on the retry ladder.
+      acts = `<button class="btn sm" data-resume="${esc(j.id)}">Resume</button>`
+           + `<button class="btn ghost sm" data-cancel="${esc(j.id)}">Cancel</button>`;
     } else if(j.status === "failed"){
       acts = `<button class="btn ghost sm" data-retry="${esc(j.id)}">Retry</button>`;
     }
@@ -1041,7 +1134,7 @@ function renderJobs(st){
         ${acts ? `<div class="jacts">${acts}</div>` : ""}
       </div>
       <div class="jright">
-        ${WAITING.has(j.status) && j.pos ? `<span class="qpos" title="Position in the queue">#${j.pos}</span>` : ""}
+        ${WAITING.has(j.status) && qpos ? `<span class="qpos" title="Position in the queue — #1 runs next">#${qpos}</span>` : ""}
         <span class="pill ${empty ? "fail" : esc(j.status)}">${esc(empty ? "Nothing downloaded" : (STATUS_LABEL[j.status]||j.status))}</span>
         ${reorder}
       </div>
@@ -1137,6 +1230,22 @@ document.addEventListener("click", async (e)=>{
     return;
   }
 
+  const rs = e.target.closest("[data-resume]");
+  if(rs){
+    rs.disabled = true; rs.textContent = "Resuming…";
+    try{
+      await api("/api/resume", {method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({id: rs.dataset.resume})});
+      if(rs.dataset.resume) toast("Resumed");
+      await tick();
+    }catch(err){
+      toast(err.message);
+      rs.disabled = false; rs.textContent = "Resume";
+    }
+    return;
+  }
+
   const rt = e.target.closest("[data-retry]");
   if(rt){
     rt.disabled = true;
@@ -1163,6 +1272,7 @@ document.addEventListener("click", async (e)=>{
                : (how === "up")     ? {id, delta: -1}
                                     : {id, delta: 1};
     mv.disabled = true;
+    optimisticMove(id, how);
     try{
       await api("/api/move", {
         method:"POST", headers:{"Content-Type":"application/json"},
@@ -1262,6 +1372,12 @@ let tickCount = 0;
 async function tick(){
   try{
     const st = await api("/api/state");
+    // While an optimistic move is in flight, keep rendering the local order:
+    // otherwise the poll repaints the server's old order and the card jumps
+    // back and forth on its way to the new position.
+    if(Date.now() < optimisticUntil && lastState){
+      st.jobs = lastState.jobs;
+    }
     lastState = st;
     renderStatus(st);
     renderJobs(st);
@@ -1282,6 +1398,22 @@ async function maybeRefreshBadges(){
 }
 
 /* ---------- actions ---------- */
+/* How many issues the user asked for. 0 means the whole listing; the "other…"
+   option reveals a number box so any count works, not just the presets. */
+function pickLimit(){
+  const v = $("igLimit").value;
+  if(v === "custom"){
+    const n = parseInt($("igLimitN").value, 10);
+    return isFinite(n) && n > 0 ? n : 0;
+  }
+  return parseInt(v, 10) || 0;
+}
+$("igLimit").addEventListener("change", ()=>{
+  const custom = $("igLimit").value === "custom";
+  $("igLimitWrap").hidden = !custom;
+  if(custom) $("igLimitN").focus();
+});
+
 // Keep "Add to queue" honest: nothing to add means nothing to click.
 const pasteBox = $("paste"), addBtn = $("addBtn");
 function syncAddBtn(){ addBtn.disabled = !pasteBox.value.trim(); }
@@ -1297,7 +1429,7 @@ $("addBtn").onclick = async ()=>{
   try{
     const r = await api("/api/add", {
       method:"POST", headers:{"Content-Type":"application/json"},
-      body: JSON.stringify({urls})
+      body: JSON.stringify({urls, limit: pickLimit(), order: $("igOrder").value})
     });
     if(r.added.length) box.value = "";
     if(r.errors.length){

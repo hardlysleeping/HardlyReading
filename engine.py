@@ -126,7 +126,7 @@ def http_json(url: str, timeout: int = 60):
     """GET a URL and return parsed JSON. No retry here — callers that can
     recover (the resolver, the per-item probe) do their own attempts."""
 
-    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/2.4.3"})
+    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/2.5.0"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.load(r)
 
@@ -154,6 +154,13 @@ class Job:
     next_try_at: float = 0.0   # retry ladder: earliest time a retry may run
     fatal: bool = False        # a permanent failure — never retried
     desc: str = ""             # the source's own blurb, if it had a useful one
+    # How many issues the user asked for, and from which end. 0 means all.
+    # Applied once the listing is in reading order, so "25 newest" means the
+    # last 25 issues of the run, not whichever 25 archive.org listed first.
+    limit: int = 0
+    want_order: str = "oldest"  # oldest | newest
+    available: int = 0          # how many the listing offered before limiting
+    pause_reason: str = ""      # space — why a job stopped without failing
     # Files downloading right now, keyed by aria2's gid. A job runs several at
     # once (-j), so one percentage for the whole job hides what is happening.
     live: dict = field(default_factory=dict)
@@ -170,7 +177,10 @@ class Job:
                 free = shutil.disk_usage(probe).free
         except OSError:
             pass
-        skipped = [i for i in self.items if i.get("skip")]
+        # Duplicates, not the ones the count left out: "7 duplicates skipped"
+        # on a job limited to 2 of 9 is a lie about what happened.
+        skipped = [i for i in self.items if i.get("skip")
+                   and not str(i.get("reason", "")).startswith(("over the", "not selected"))]
         return {
             "id": self.id, "kind": self.kind, "source": self.source,
             "label": self.label, "status": self.status,
@@ -183,6 +193,13 @@ class Job:
             "scoped_query": self.scoped_query,
             "dir": self.dir,
             "series": self.series,
+            # How many issues were asked for, from which end, and how many the
+            # listing offered — so the card can say "the newest 25 of 312".
+            "limit": self.limit, "want_order": self.want_order,
+            "available": self.available, "pause_reason": self.pause_reason,
+            # What this job will actually fetch, which is not len(items): the
+            # items list also holds everything skipped or over the limit.
+            "n_take": len([i for i in self.items if not i.get("skip")]),
             # The source's own blurb, so the queue card can say what this is
             # rather than only what it is called.
             "desc": self.desc,
@@ -1070,17 +1087,22 @@ WantedBy=default.target
                 pass
 
     # ---- queue
-    def add(self, url: str):
+    def add(self, url: str, limit: int = 0, want_order: str = "oldest"):
         c = classify_url(url)
         if not c:
             raise ValueError("Empty link")
         kind, query, label = c
+        # A limit only makes sense for a collection or a search query: one item
+        # URL is already exactly one issue.
+        limit = max(0, int(limit or 0))
+        want_order = "newest" if str(want_order).lower().startswith("new") else "oldest"
         with self.lock:
             for j in self.jobs:
                 if j.status != "cancelled" and j.query == query and j.kind == kind:
                     raise ValueError("Already in the list")
             job = Job(id=uuid.uuid4().hex[:12], kind=kind, source=url,
-                      label=label or query, query=query)
+                      label=label or query, query=query,
+                      limit=limit, want_order=want_order)
             self.jobs.append(job)
             self.order.append(job.id)
             self.save_state()
@@ -1094,6 +1116,11 @@ WantedBy=default.target
         join below silently means the process working directory — which on a
         launcher means files appear inside the app folder.
         """
+        # IA_DOWNLOAD_DIR wins: it is what a test run or a second instance uses
+        # to stay away from the real library.
+        d = (os.environ.get("IA_DOWNLOAD_DIR") or "").strip()
+        if d:
+            return d
         d = (self.settings.get("download_dir") or "").strip()
         return d or default_download_dir()
 
@@ -1333,12 +1360,31 @@ WantedBy=default.target
                         e.get("file") or e["identifier"])
                 job.series = safe_name(job.label)
 
+            # --- how many did they ask for? `ok` is in reading order by now,
+            # so taking a slice of it means "the first 25 issues" or "the newest
+            # 25", not whichever ones archive.org happened to list first.
+            job.available = len(ok)
+            if job.limit and len(ok) > job.limit:
+                if job.want_order == "newest":
+                    ok = ok[-job.limit:]
+                else:
+                    ok = ok[:job.limit]
+
             # The named entries are what gets downloaded and verified, so they
             # are what the job must hold. plan_filenames returns copies, so
             # assigning `items` would leave every entry without an `outname`.
             kept_ids = {e.get("identifier") for e in ok}
             skipped = [i for i in items if i.get("skip")
                        or i.get("identifier") not in kept_ids]
+            # Anything dropped by the count the user chose should say so;
+            # otherwise the item list reads as though they already had it.
+            for n, i in enumerate(skipped):
+                if i.get("identifier") not in kept_ids and not i.get("skip"):
+                    i = dict(i)
+                    i["skip"] = True
+                    i["reason"] = (f"over the {job.limit} you asked for"
+                                   if job.limit else "not selected")
+                    skipped[n] = i
 
             # --- delta-vs-folder: drop anything already on disk, matched by
             # archive's own checksum rather than by filename. Renaming a file
@@ -1447,41 +1493,36 @@ WantedBy=default.target
             self.save_state()
             return
 
-        if pending:
-            inp = os.path.join(dest, "aria.txt")
-            write_aria_input(pending, inp)
-            self.save_state()
-
-            cmd = ([aria, "-i", "aria.txt",
-                    "-j", str(self.settings.get("jobs_in_flight", 12))]
-                   + ARIA_FLAGS + ["--summary-interval", "5"])
-
-            proc = subprocess.Popen(cmd, cwd=dest, stdout=subprocess.PIPE,
-                                    stderr=subprocess.STDOUT, text=True, bufsize=1)
-            while True:
-                line = proc.stdout.readline()
-                if not line and proc.poll() is not None:
+        # Download in chunks that fit. Handing aria2 the whole list means it
+        # fills the disk partway through and leaves truncated files behind; this
+        # way the job stops BEFORE the first file that will not fit, in a state
+        # that can be resumed once space is freed.
+        reserve = int(self.settings.get("space_reserve_mb", SPACE_RESERVE_MB)) * 1024 * 1024
+        while pending:
+            free = free_bytes(dest)
+            take, acc = [], 0
+            for e in pending:
+                size = int(e.get("size") or 0)
+                if size and acc + size + reserve > free:
                     break
-                if not line:
-                    continue
-                m = re.search(r"\((\d{1,3})%\)", line)
-                if m:
-                    job.done_bytes = int(job.total_bytes * int(m.group(1)) / 100)
-                # [#gid 4.5MiB/41MiB(11%) CN:1 DL:1.2MiB ETA:35s]
-                f = re.match(r"\[#(\w+)\s+([\d.]+\w+)/([\d.]+\w+)\((\d{1,3})%\)"
-                             r"(?:.*?DL:([\d.]+\w+))?", line)
-                if f:
-                    gid, done, total, pct, sp = f.groups()
-                    job.live[gid] = {"gid": gid, "pct": int(pct),
-                                     "done": _parse_speed(done),
-                                     "total": _parse_speed(total),
-                                     "speed": _parse_speed(sp) if sp else 0}
-                sp = re.search(r"DL:([\d.]+\w+)", line)
-                if sp:
-                    job.speed = _parse_speed(sp.group(1))
-                job.updated = time.time()
+                take.append(e)
+                acc += size
+            if not take:
+                # Even the next file alone does not fit: pause rather than
+                # start and fail. The job keeps its place in the queue.
+                need = int(pending[0].get("size") or 0)
+                with self.lock:
+                    job.status = "paused"
+                    job.pause_reason = "space"
+                    job.message = (f"Paused — needs {human_size(need)} "
+                                   f"but only {human_size(free)} free")
+                    job.updated = time.time()
+                    self.save_state()
+                return
+            self._run_aria(aria, job, dest, take)
+            pending = pending[len(take):]
+        # (the single-run path below is replaced by _run_aria)
 
-            proc.wait()
         job.done_bytes = job.total_bytes
         job.live = {}
 
@@ -1516,6 +1557,68 @@ WantedBy=default.target
             job.message = (f"retrying in {human_eta(delay)} "
                            f"(attempt {job.retries + 1}) · {note}")
         self.save_state()
+
+    def _run_aria(self, aria, job, dest, entries):
+        """Run aria2 for one batch of files, streaming its progress into the job."""
+        write_aria_input(entries, os.path.join(dest, "aria.txt"))
+        self.save_state()
+
+        cmd = ([aria, "-i", "aria.txt",
+                "-j", str(self.settings.get("jobs_in_flight", 12))]
+               + ARIA_FLAGS + ["--summary-interval", "5"])
+
+        proc = subprocess.Popen(cmd, cwd=dest, stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT, text=True, bufsize=1)
+        while True:
+            line = proc.stdout.readline()
+            if not line and proc.poll() is not None:
+                break
+            if not line:
+                continue
+            m = re.search(r"\((\d{1,3})%\)", line)
+            if m:
+                job.done_bytes = int(job.total_bytes * int(m.group(1)) / 100)
+            # [#gid 4.5MiB/41MiB(11%) CN:1 DL:1.2MiB ETA:35s]
+            f = re.match(r"\[#(\w+)\s+([\d.]+\w+)/([\d.]+\w+)\((\d{1,3})%\)"
+                         r"(?:.*?DL:([\d.]+\w+))?", line)
+            if f:
+                gid, done, total, pct, sp = f.groups()
+                job.live[gid] = {"gid": gid, "pct": int(pct),
+                                 "done": _parse_speed(done),
+                                 "total": _parse_speed(total),
+                                 "speed": _parse_speed(sp) if sp else 0}
+            sp = re.search(r"DL:([\d.]+\w+)", line)
+            if sp:
+                job.speed = _parse_speed(sp.group(1))
+            job.updated = time.time()
+
+        proc.wait()
+
+    def resume(self, job_id: str) -> dict:
+        """Restart a job that paused itself (out of space).
+
+        Deliberately separate from Retry: a paused job is not a failure, and
+        re-queueing it must not count as one more attempt on the retry ladder.
+        If the disk is still too full it pauses again immediately, with the new
+        numbers, rather than spending the job's retries discovering that.
+        """
+        with self.lock:
+            j = self.get(job_id)
+            if not j:
+                raise ValueError("no such job")
+            if j.status != "paused":
+                raise ValueError("that job is not paused")
+            # "resume" means the item list is already known: the worker goes
+            # straight back into the download instead of re-walking a listing
+            # that may be a thousand items long.
+            j.status = "resume" if j.items else "queued"
+            j.pause_reason = ""
+            j.message = "picked up where it stopped"
+            j.updated = time.time()
+            self.save_state()
+            out = j.summary()
+        self.kick()
+        return out
 
     def confirm(self, job_id):
         """User pressed Download on the plan screen."""
@@ -2427,6 +2530,10 @@ def open_folder(path: str) -> bool:
 # connection to ~0.5-1.2 MiB/s, so aggregate throughput scales with how many
 # files are in flight. Measured on our runs: -j12 -x1 -s1 gave 10-15 MiB/s
 # against ~3.5 MiB/s for -j4 -x4 -s4.
+# Free space kept back so a download cannot fill the disk completely. A paused
+# job needs room to resume plus whatever the OS wants; 256 MB is the floor.
+SPACE_RESERVE_MB = 256
+
 ARIA_FLAGS = ["-x", "1", "-s", "1", "-c",
               "--file-allocation=none",
               "--auto-file-renaming=false",

@@ -84,9 +84,15 @@ UI never drives a download directly — it only posts intent and reads back stat
   between devices.
 - **Read without downloading** — stream a book's pages straight from
   archive.org, with the same reader and the same saved position.
-- **A queue that shows its work** — grouped into Downloading now / Needs
-  attention / Waiting / Finished, with per-file progress for concurrent
+- **A queue that shows its work** — grouped into Downloading now / Paused /
+  Needs attention / Waiting / Finished, with per-file progress for concurrent
   transfers.
+- **Reorder the queue** — push a job to the top, to the bottom, or one place up
+  or down; the numbers are the run order, so `#1` really does download next.
+- **Take as many issues as you want** — pick a count (or type one) and whether
+  to start from the first issue or the newest, and only those are queued.
+- **Stops before it fills the disk** — if the next file will not fit, the job
+  pauses and says so instead of leaving a truncated file behind.
 
 ## Screenshots
 
@@ -102,10 +108,33 @@ favourites; **details** on a row opens size, pages, position and actions:
 |---|---|
 | ![Library grid](docs/library.png) | ![Library list](docs/library-list.png) |
 
-The queue says what it is doing — Downloading now, Needs attention, Waiting,
-Finished — and a running job lists every file in flight:
+The queue says what it is doing — Downloading now, Paused, Needs attention,
+Waiting, Finished — and a running job lists every file in flight. Each waiting
+card has four arrows: to the top, one up, one down, to the bottom:
 
 ![Download queue](docs/queue.png)
+
+### Taking part of a collection
+
+A collection can hold hundreds of issues, and you rarely want all of them. The
+**How many** picker beside *Add to queue* takes a preset (5, 10, 25, 50, 100) or
+any number under *other…*, and **starting from** chooses the end: the first
+issue, or the newest. "The newest 25" means the last 25 in reading order, not
+whichever 25 archive.org happened to list first — and the rest never enter the
+queue, so a 5,000-item collection costs nothing.
+
+The card then reads `the newest 25 of 312`, and everything outside that count is
+reported as over the limit, not as a duplicate you already had.
+
+### When the disk runs out
+
+Before each batch of files, the job asks the filesystem how much room is left
+and stops *before* the first file that will not fit, keeping 256 MB spare so the
+resume itself has somewhere to write. The job moves to **Paused** with the
+numbers that stopped it ("needs 412 MB but only 240 MB free"), keeps its place in
+the queue, and waits. **Resume** re-checks the disk and either carries on or
+pauses again with fresh numbers — it does not burn a retry, because nothing
+failed.
 
 Reader — fits the page, arrow keys to turn, remembers your place:
 
@@ -377,6 +406,17 @@ The gear in the header opens a panel; changes save as you edit and persist in
 Job cards can be **cancelled** before they start and **removed** from the list,
 and library items can be **deleted** (file plus its reading position).
 
+## Environment overrides
+
+Useful for a second instance or a test run, so it cannot touch your real library:
+
+| Variable | Effect |
+|---|---|
+| `IA_STATE` | Path to `state.json` |
+| `IA_HISTORY` | Path to the progress/favourites SQLite file |
+| `IA_DOWNLOAD_DIR` | Download folder, ahead of the setting in `state.json` |
+| `IA_ARIA2` | Path to the `aria2c` binary |
+
 ## Where things are stored
 
 | What | Windows | macOS | Linux |
@@ -421,6 +461,8 @@ Worth knowing before you point it at a 500-issue collection:
 - **Lendable items still won't work.** Items that require borrowing ("restricted",
   "lending", "borrow") are treated as permanently unavailable — a streaming
   reader does not get around archive.org's lending.
+- **A paused job stays paused.** It waits for you to free space and press
+  Resume; it will not spend the night retrying itself into a full disk.
 - **PDF covers need poppler.** The library renders page one of a PDF with
   `pdftoppm` when it is installed. Without it a PDF shows a plain tile.
 - **Tested on Linux.** `run.py` handles Windows and macOS paths, the `aria2c.exe`

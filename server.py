@@ -45,7 +45,7 @@ ENGINE = engine.Engine()
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "HardlyReading/2.4.3"
+    server_version = "HardlyReading/2.5.0"
 
     def log_message(self, fmt, *args):
         pass  # quiet
@@ -571,10 +571,19 @@ class Handler(BaseHTTPRequestHandler):
             urls = body.get("urls") or []
             if isinstance(urls, str):
                 urls = [u.strip() for u in urls.splitlines() if u.strip()]
+            # "Grab the newest 25" travels with the add, not with the job later:
+            # the listing is trimmed while resolving, so a 5,000-item collection
+            # never enters the queue fully.
+            limit = body.get("limit") or 0
+            try:
+                limit = max(0, int(limit))
+            except (TypeError, ValueError):
+                limit = 0
+            want_order = str(body.get("order") or "oldest").lower()
             added, errors = [], []
             for url in urls:
                 try:
-                    added.append(ENGINE.add(url))
+                    added.append(ENGINE.add(url, limit=limit, want_order=want_order))
                 except Exception as e:  # noqa: BLE001
                     errors.append({"url": url, "error": str(e)})
             return self._send(200, {"added": added, "errors": errors})
@@ -652,6 +661,12 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, {"job": ENGINE.cancel(body.get("id") or "")})
             except Exception as e:  # noqa: BLE001
                 return self._send(400, {"error": str(e)})
+
+        if path == "/api/resume":
+            try:
+                return self._send(200, ENGINE.resume(str(body.get("id") or "")))
+            except ValueError as e:
+                return self._send(409, {"error": str(e)})
 
         if path == "/api/move":
             # Two shapes: {id, index} jumps anywhere, {id, delta} shifts by one.
