@@ -3,6 +3,34 @@
 Notable changes to HardlyReading. Versions are tagged on GitHub with matching
 release notes.
 
+## [1.9.0] — 2026-10-20
+
+### Added
+
+- **Paging on every tab** — 10 / 25 / 50 / 100 per page, prev/next and a
+  jump-to-page list, with "showing 11–20 of 63". Queue rows keep their real
+  position number across pages, so "move to top" still means what it says.
+  Sizes are remembered per tab.
+- **The library lists work that is not on disk yet.** A queued, planned or failed
+  item appears with its state, a **Download** (or **Retry**) button, and a link to
+  the item page on archive.org. Files mid-download are marked partial and cannot
+  be opened.
+- **Search descriptions** from archive.org, tags stripped and entities decoded.
+- **Support the Internet Archive** buttons under the paste box and under the
+  search results.
+
+### Fixed
+
+- **An empty download folder wrote into the app directory.** The new "Use
+  default" button saved `""`, and two joins used the setting raw, so a download
+  landed in the process working directory where the library scan never looked.
+  `Engine.download_root()` resolves empty or whitespace to the default.
+- Not-downloaded rows could be selected and then failed to delete; they carry no
+  tick now.
+- A missing download folder no longer hides behind pending rows.
+- The PDF zoom key listener and resize handler were never detached, so a second
+  PDF shared keystrokes with the first.
+
 ## [1.8.0] — 2026-10-20
 
 ### Fixed
@@ -178,6 +206,7 @@ First release.
 - Built-in CBZ / CBR / PDF reader; CBR needs `unrar`, `bsdtar` or `7z`
 - Cross-platform launcher that finds `aria2c` and opens the browser
 
+[1.9.0]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v1.9.0
 [1.8.0]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v1.8.0
 [1.7.0]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v1.7.0
 [1.6.1]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v1.6.1
