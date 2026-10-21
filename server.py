@@ -44,7 +44,7 @@ ENGINE = engine.Engine()
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "HardlyReading/2.0.2"
+    server_version = "HardlyReading/2.1.0"
 
     def log_message(self, fmt, *args):
         pass  # quiet
@@ -135,11 +135,16 @@ class Handler(BaseHTTPRequestHandler):
         """
         ident = (entry or {}).get("identifier") or ""
         if not os.path.isfile(path):
+            # A streamed book keeps its place in the same progress table the
+            # downloaded ones use, so the row must read it back — otherwise the
+            # library forgets you ever opened it.
+            pkey = engine.book_key(entry)
+            done = ENGINE.get_progress(pkey)
             return {
-                "job": job, "key": engine.book_key(entry), "series": series,
+                "job": job, "key": pkey, "series": series,
                 "name": name, "size": (entry or {}).get("size", 0),
                 "pages": 0, "kind": "pending", "readable": False,
-                "progress": 0, "finished": False, "downloaded": False,
+                "progress": done, "finished": False, "downloaded": False,
                 "status": status, "identifier": ident,
                 "item_url": f"https://archive.org/details/{ident}" if ident else "",
             }
@@ -306,6 +311,36 @@ class Handler(BaseHTTPRequestHandler):
             return self._send(200, {"id": j.id, "label": j.label,
                                     "series": j.series, "total": len(j.items),
                                     "items": rows})
+
+        if path == "/api/stream":
+            # One page of a book read straight from archive.org, for library
+            # rows with no file on disk. Nothing is written to the library
+            # folder; the JPEG is cached under the config directory.
+            if path == "/api/stream" and (qs.get("meta") or [""])[0] == "1":
+                ident = (qs.get("ident") or [""])[0]
+                n = engine.stream_item_pages(ident)
+                if not n:
+                    return self._send(200, {"pages": 0, "ident": ident,
+                                            "known": False})
+                return self._send(200, {"pages": n, "ident": ident, "known": True})
+            ident = (qs.get("ident") or [""])[0]
+            try:
+                page = int((qs.get("page") or ["0"])[0])
+            except ValueError:
+                page = 0
+            if not ident:
+                return self._send(400, {"error": "no identifier"})
+            try:
+                blob, ctype = engine.stream_page(ident, page)
+            except LookupError as e:
+                return self._send(404, {"error": str(e)})
+            self.send_response(200)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(blob)))
+            self.send_header("Cache-Control", "public, max-age=86400")
+            self.end_headers()
+            self.wfile.write(blob)
+            return
 
         if path == "/api/thumb":
             # Cover for a library row: page 0, downscaled and cached server-side.

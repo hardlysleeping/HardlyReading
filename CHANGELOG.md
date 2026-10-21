@@ -3,6 +3,27 @@
 Notable changes to HardlyReading. Versions are tagged on GitHub with matching
 release notes.
 
+## [2.1.0] — 2026-10-20
+
+### Added
+
+- **Read without downloading.** Library rows for work that is not on disk get a
+  **Read** button next to Download. The reader streams page images from
+  archive.org (`/api/stream`), so a 53-page issue opens in a second instead of
+  waiting for a 50 MB archive — and nothing is written to the library folder.
+  The same reader shell, fit/zoom, arrows and saved progress apply, and the page
+  position is stored in the same table the downloaded books use.
+- A quiet note under the reader controls says what streaming costs: it needs a
+  connection and the pages are lower resolution than the file. It carries a
+  **Download it** button and can be dismissed.
+
+### Notes
+
+- archive.org publishes no page count for these items and serves pages *past*
+  the end as repeats rather than errors, so the total comes from the item's OCR
+  page index. When no derivative lists the leaves the counter says "?" instead
+  of guessing.
+
 ## [2.0.2] — 2026-10-20
 
 ### Changed
@@ -248,6 +269,7 @@ First release.
 - Built-in CBZ / CBR / PDF reader; CBR needs `unrar`, `bsdtar` or `7z`
 - Cross-platform launcher that finds `aria2c` and opens the browser
 
+[2.1.0]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.1.0
 [2.0.2]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.0.2
 [2.0.1]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.0.1
 [2.0.0]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.0.0

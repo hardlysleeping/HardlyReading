@@ -29,6 +29,7 @@ import subprocess
 import sys
 import threading
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
@@ -125,7 +126,7 @@ def http_json(url: str, timeout: int = 60):
     """GET a URL and return parsed JSON. No retry here — callers that can
     recover (the resolver, the per-item probe) do their own attempts."""
 
-    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/2.0.2"})
+    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/2.1.0"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.load(r)
 
@@ -2195,3 +2196,143 @@ def verify_manifest(job_dir: str, entries, magic=True):
         problems.append(("*", f"{len(stray)} unfinished control files"))
     return ok, problems
 
+
+# ---------------------------------------------------------------- streaming
+# Reading a book straight from archive.org, with nothing written to the
+# library folder. The site already publishes one JPEG per page as a
+# "derivative", so a page turn is a ~400 kB request rather than a 50 MB file
+# download. This is what makes Read-without-Download possible; it needs a
+# connection every time, and that limit is stated in the UI.
+
+STREAM_DIR = os.path.join(user_config_dir(), "stream")
+STREAM_WIDTH = 800            # px: the sharp/economical middle of the offered sizes
+STREAM_MAX_PAGES = 1200       # a hard stop for the page-count probe
+_IA_BASE = "https://archive.org"
+
+
+def _http_get(url: str, timeout: int = 25):
+    """GET returning (status, body). Never raises: the UI handles the status."""
+    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading"})
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as r:
+            return r.status, r.read()
+    except urllib.error.HTTPError as e:
+        return e.code, b""
+    except Exception:
+        return 0, b""
+
+
+def _item_files(ident: str):
+    """The item's file list plus its metadata, or None when it is unreachable."""
+    code, body = _http_get(f"{_IA_BASE}/metadata/{urllib.parse.quote(ident)}", 15)
+    if code != 200:
+        return None
+    try:
+        return json.loads(body)
+    except ValueError:
+        return None
+
+
+def stream_item_pages(ident: str, width: int = STREAM_WIDTH) -> int:
+    """How many pages an item exposes, for the reader's counter.
+
+    archive.org does not report a page count for these items: metadata has no
+    `imagecount`, and pages *past* the end return 200 with a repeated image
+    instead of a 404, so probing forward would happily run forever. The count
+    has to come from a derivative that lists the leaves, so try those in order
+    of cost and fall back to zero — the reader then counts pages by whatever
+    was actually fetched and shows "?" for the total, which is honest.
+    """
+    if not ident:
+        return 0
+    meta = _item_files(ident)
+    if not meta:
+        return 0
+
+    md = meta.get("metadata") or {}
+    for key in ("imagecount", "page_count", "pagecount"):
+        for src in (md, meta):
+            try:
+                n = int(src.get(key) or 0)
+            except (TypeError, ValueError):
+                n = 0
+            if n > 0:
+                return min(n, STREAM_MAX_PAGES)
+
+    # Cheapest reliable list of leaves: the OCR page index (a few hundred
+    # bytes) or the page-numbers sidecar (a few kB).
+    names = [f.get("name", "") for f in (meta.get("files") or [])]
+    for name in names:
+        low = name.lower()
+        if low.endswith(("_hocr_pageindex.json.gz", "_page_numbers.json")):
+            code, body = _http_get(
+                f"{_IA_BASE}/download/{urllib.parse.quote(ident)}/"
+                f"{urllib.parse.quote(name)}", 20)
+            if code != 200 or not body:
+                continue
+            if low.endswith(".gz"):
+                try:
+                    import gzip
+                    body = gzip.decompress(body)
+                except OSError:
+                    continue
+            try:
+                doc = json.loads(body)
+            except ValueError:
+                continue
+            if isinstance(doc, dict):
+                leaves = doc.get("pages") or []
+            elif isinstance(doc, list):
+                # The page index is [[char_offset, length, ...], ...] — one
+                # row per leaf, in reading order — so its length is the count.
+                return min(len(doc), STREAM_MAX_PAGES)
+            else:
+                leaves = []
+            last = -1
+            for e in leaves:
+                if isinstance(e, dict):
+                    v = e.get("leafNum", -1)
+                elif isinstance(e, (list, tuple)) and e:
+                    v = e[0]
+                else:
+                    continue
+                try:
+                    last = max(last, int(v))
+                except (TypeError, ValueError):
+                    pass
+            if last >= 0:
+                return min(last + 1, STREAM_MAX_PAGES)
+    return 0
+
+
+def stream_page(ident: str, page: int, width: int = STREAM_WIDTH):
+    """One page of a streamed book as (bytes, content_type).
+
+    Cached on disk by identifier/page/width: flipping back through pages is
+    free, and a re-open does not re-fetch what was already seen. Raises
+    LookupError when the page cannot be had, which the route turns into a 404
+    so the UI can say "stopped" rather than showing a broken image.
+    """
+    if not ident:
+        raise LookupError("no identifier")
+    page = max(0, int(page))
+    safe = re.sub(r"[^A-Za-z0-9._-]", "_", ident)
+    cache = os.path.join(STREAM_DIR, f"{safe}_{page}_w{width}.jpg")
+    if os.path.isfile(cache):
+        with open(cache, "rb") as fh:
+            return fh.read(), "image/jpeg"
+
+    url = (f"{_IA_BASE}/download/{urllib.parse.quote(ident)}/page/"
+           f"n{page}_w{width}.jpg")
+    code, blob = _http_get(url, 30)
+    if code != 200 or not blob or not blob.startswith(b"\xff\xd8"):
+        raise LookupError(f"page {page} unavailable (HTTP {code})")
+    try:
+        os.makedirs(STREAM_DIR, exist_ok=True)
+        tmp = cache + ".part"
+        with open(tmp, "wb") as fh:
+            fh.write(blob)
+        os.replace(tmp, cache)
+    except OSError:
+        pass          # a read-only config dir still streams, just uncached
+    return blob, "image/jpeg"

@@ -304,6 +304,16 @@
      `margin:auto` on the image rather than justify-content, because a centred
      flex item wider than its container clips its left edge and you cannot
      scroll to it. */
+  /* Streamed books say what they are: a quiet line under the controls, dim
+     enough not to compete with the page, with the one action that removes the
+     limitation (download it) and a dismiss for anyone who has read it once. */
+  .streamnote{display:flex;align-items:center;gap:6px;flex-wrap:wrap;
+    padding:5px 12px;font-size:11.5px;color:var(--dim);
+    background:rgba(255,255,255,.03);border-bottom:1px solid var(--line)}
+  .streamnote button{background:transparent;border:1px solid var(--line);
+    color:var(--dim);font-size:11px;padding:1px 7px;border-radius:5px;cursor:pointer}
+  .streamnote button:hover{color:var(--text);border-color:rgba(255,255,255,.22)}
+  #streamhide{margin-left:auto;border:none;font-size:14px;padding:0 4px}
   .rstage{flex:1;min-height:0;overflow:auto;display:flex;padding:14px}
   .rfit{min-width:100%;min-height:100%;display:flex}
   .rfit img{display:block;margin:auto;box-shadow:0 4px 30px rgba(0,0,0,.6)}
@@ -834,6 +844,20 @@ document.addEventListener("click", async (e)=>{
     }catch(err){ toast(err.message); dl.disabled = false; }
     return;
   }
+  const st = e.target.closest("[data-stream]");
+  if(st){
+    st.disabled = true;
+    try{
+      await openStream({
+        job: st.dataset.stream, name: st.dataset.name,
+        ident: st.dataset.ident,
+        key: st.dataset.key || "",
+      });
+    }catch(err){ toast(err.message); }
+    st.disabled = false;
+    return;
+  }
+
   const rt = e.target.closest("[data-retry]");
   if(rt){
     rt.disabled = true;
@@ -1487,11 +1511,18 @@ function pendingRowHtml(it, on, tick, exists){
   // A partial file exists but cannot be read yet; say "downloading", not
   // "not downloaded", and never offer the reader.
   const state = exists ? `part-downloaded` : "not downloaded";
+  // Read streams the pages from archive.org, so it works for anything with an
+  // identifier — including items that are not on disk at all.
+  const read = it.identifier
+    ? `<button class="btn sm" data-stream="${esc(it.job)}" data-name="${esc(it.name)}"
+               data-ident="${esc(it.identifier)}" data-key="${esc(it.key)}"
+               title="Read straight from archive.org — nothing is downloaded">Read</button>`
+    : "";
   let act = "";
   if(it.status === "planned"){
-    act = `<button class="btn sm" data-dl="${esc(it.job)}">Download</button>`;
+    act = `<button class="btn ghost sm" data-dl="${esc(it.job)}">Download</button>`;
   }else if(it.status === "failed"){
-    act = `<button class="btn sm" data-retry="${esc(it.job)}">Retry</button>`;
+    act = `<button class="btn ghost sm" data-retry="${esc(it.job)}">Retry</button>`;
   }
   // Reading without downloading: the item page on archive.org has the built-in
   // viewer, so a PDF can be looked at now and fetched later.
@@ -1505,7 +1536,7 @@ function pendingRowHtml(it, on, tick, exists){
       <span class="nm">${esc(it.name || it.series)}</span>
       <span class="pendstate">${esc(state)}</span>
     </div>
-    ${act}${open}
+    ${read}${act}${open}
     <span class="pg">${esc(label)}</span>
   </div>`;
 }
@@ -1603,12 +1634,30 @@ async function openReader(jobId){
   });
 }
 
+// Declared above readerState's users so the close-time flush and the debounce
+// share one timer, not two.
+let saveTimer = null;
+
 function hideReader(){
+  // A page turn is saved on a 400 ms debounce; closing the reader sooner used
+  // to cancel it and the last page read was never recorded. Flush it now.
+  if(saveTimer && readerState){
+    clearTimeout(saveTimer); saveTimer = null;
+    const s = readerState;
+    api("/api/progress", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({key: s.key, page: s.page, total: s.count})
+    }).catch(()=>{});
+  }
   const r = $("reader");
   if(r) r.remove();
   if(window._rResize){
     window.removeEventListener("resize", window._rResize);
     window._rResize = null;
+  }
+  if(window._rStreamResize){
+    window.removeEventListener("resize", window._rStreamResize);
+    window._rStreamResize = null;
   }
   document.removeEventListener("keydown", readerKeys);
   // The PDF viewer keeps its own key handler and document handle; dropping the
@@ -1880,7 +1929,6 @@ function stepPage(d){
   saveProgress();
 }
 
-let saveTimer = null;
 function saveProgress(){
   if(!readerState) return;
   // Debounced: holding an arrow key should not spam the database.
@@ -1898,14 +1946,99 @@ function saveProgress(){
   }, 400);
 }
 
+/* Read straight from archive.org. Same reader shell as a downloaded book —
+   fit, zoom, arrows, saved progress — but each page is a small JPEG fetched by
+   the server instead of a slice of a local archive. The limits (needs a
+   connection, lower resolution) are stated in the bar, not hidden. */
+async function openStream(item){
+  hideReader();
+
+  let meta;
+  try{
+    meta = await api(`/api/stream?meta=1&ident=${encodeURIComponent(item.ident)}`);
+  }catch(e){ toast("Could not reach archive.org: " + e.message); return; }
+  const count = meta.pages || 0;
+
+  const done = await api(`/api/progress?key=${encodeURIComponent(item.key)}`)
+                     .catch(()=>({page: 0}));
+
+  const wrap = document.createElement("div");
+  wrap.className = "rwrap"; wrap.id = "reader";
+  wrap.innerHTML = `
+    <div class="rbar">
+      ${brandHtml()}
+      <span class="t">${esc(item.name)}</span>
+      <span class="sp"></span>
+      <button id="rprev" title="Previous page">‹</button>
+      <span class="rpage" id="rpage"></span>
+      <button id="rnext" title="Next page">›</button>
+      <span class="sp"></span>
+      <button id="rzoomout" title="Zoom out (−)">−</button>
+      <span class="rzoom" id="rzoomlbl">Fit</span>
+      <button id="rzoomin" title="Zoom in (+)">+</button>
+      <button id="rzoomfit" title="Fit to screen (0)">Fit</button>
+      <button id="rclose">Close</button>
+    </div>
+    <div class="streamnote" id="streamnote">
+      Streaming from archive.org — needs a connection, and pages are lower
+      resolution than the file. <button id="streamdl">Download it</button>
+      <button id="streamhide" title="Hide this">×</button>
+    </div>
+    <div class="rstage" id="rstage"><div class="rfit"><img id="rimg" alt=""></div></div>`;
+  document.body.appendChild(wrap);
+
+  readerState = {job: item.job, file: item.name, key: item.key,
+                 ident: item.ident, stream: true,
+                 page: Math.max(0, (done && done.page) || 0),
+                 count: count || 0, zoom: 1};
+
+  $("rprev").onclick = () => stepPage(-1);
+  $("rnext").onclick = () => stepPage(1);
+  $("rclose").onclick = hideReader;
+  $("rzoomin").onclick  = () => zoomBy(1.25);
+  $("rzoomout").onclick = () => zoomBy(1 / 1.25);
+  $("rzoomfit").onclick = () => setZoom(1);
+  $("streamhide").onclick = (e)=>{ e.stopPropagation();
+    const n = $("streamnote"); if(n) n.style.display = "none"; };
+  $("streamdl").onclick = async (e)=>{
+    e.stopPropagation();
+    try{
+      await api("/api/confirm", {method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({id: item.job})});
+      toast("Downloading — you can keep reading");
+    }catch(err){ toast(err.message); }
+  };
+  document.addEventListener("keydown", readerKeys);
+  // Named so hideReader can detach it; an anonymous listener here would keep
+  // firing at a removed reader.
+  window._rStreamResize = applyZoom;
+  window.addEventListener("resize", window._rStreamResize);
+  paintPage();
+}
+
 function paintPage(){
   const s = readerState;
   if(!s) return;
-  const q = `id=${encodeURIComponent(s.job)}&file=${encodeURIComponent(s.file)}`;
-  $("rimg").src = `/api/page?${q}&page=${s.page}`;
-  $("rpage").textContent = `${s.page + 1} / ${s.count}`;
+  const img = $("rimg");
+  if(s.stream){
+    // Re-fit when the new page arrives — swapping src does not re-run the
+    // shared onload hook the downloaded-book reader installs.
+    img.onload = () => applyZoom();
+    img.src = `/api/stream?ident=${encodeURIComponent(s.ident)}&page=${s.page}`;
+    // A streamed page can fail (offline, item restricted) — say so in the bar
+    // instead of leaving a broken image.
+    img.onerror = ()=>{ const el = $("rpg"); if(el) el.textContent = "page unavailable"; };
+  }else{
+    const q = `id=${encodeURIComponent(s.job)}&file=${encodeURIComponent(s.file)}`;
+    img.src = `/api/page?${q}&page=${s.page}`;
+  }
+  // A streamed item has no reported total when archive.org cannot tell us one;
+  // showing "?" is honest, where a wrong total would break the progress bar.
+  $("rpage").textContent = s.count ? `${s.page + 1} / ${s.count}`
+                                   : `${s.page + 1} / ?`;
   $("rprev").disabled = s.page <= 0;
-  $("rnext").disabled = s.page >= s.count - 1;
+  $("rnext").disabled = s.count > 0 && s.page >= s.count - 1;
 }
 
 /* Service worker: installable app + an offline shell. It never caches /api/*,

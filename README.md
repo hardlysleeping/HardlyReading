@@ -225,6 +225,23 @@ the job. The list is fetched when you open the card, not with the 1.2 s poll, so
 a collection of 400 issues costs nothing until you ask for it. A card you opened
 stays open.
 
+## Read a book without downloading it
+
+Rows for work that is not on disk have a **Read** button. It streams page images
+from archive.org — a few hundred kB per page — so you can look at an issue
+immediately and decide whether it is worth keeping. Reading progress is saved in
+the same table as downloaded books, so a streamed book resumes where you left it
+and shows up in your history either way.
+
+The trade is stated in the reader rather than hidden: streaming needs a
+connection every page, the images are lower resolution than the archive itself,
+and nothing is available offline. **Download it** in that note fetches the real
+file without closing the book.
+
+Page counts come from the item's OCR page index. archive.org does not publish a
+count for most comics and serves pages past the end as repeats instead of
+errors, so when no index exists the reader shows `?` rather than invent a total.
+
 ## The library reads the folder, not just the queue
 
 The Library lists what is actually in your **download folder** — the one set in
