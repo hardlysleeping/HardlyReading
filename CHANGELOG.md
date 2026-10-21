@@ -3,7 +3,32 @@
 Notable changes to HardlyReading. Versions are tagged on GitHub with matching
 release notes.
 
-## [2.3.0] — 2026-10-20
+## [2.4.0] — 2026-10-20
+
+### Added
+
+- **Start when the computer starts** (Settings → Start-up), **off by default**.
+  Switching it on writes a systemd user unit for this install's folder, port and
+  interpreter, enables it, and tellingly does *not* start a second copy while the
+  app is already running. Switching it off disables and removes the unit.
+- The hint under the toggle explains what it actually buys: the queue survives a
+  restart either way — `state.json` holds it and aria2 resumes `.aria2` partial
+  files — so the toggle only decides whether the server comes back on its own.
+
+### Fixed
+
+- The generated unit ran whatever Python launched the app, which could be a
+  virtualenv that will not exist later. It now prefers a system interpreter.
+- Enabling used `systemctl --user enable --now`, which started a second server
+  fighting for the same port. It enables only.
+
+### Notes
+
+- Automatic start is wired for systemd on Linux. Elsewhere the toggle reports
+  that it is unsupported rather than pretending; the queue and partial downloads
+  still survive a restart.
+
+
 
 ### Added
 

@@ -530,6 +530,15 @@
           <span class="hint" style="margin:0">Forgets every saved position. Files stay.</span>
         </div>
 
+        <div class="sgroup">Start-up</div>
+        <label class="rowchk">
+          <input type="checkbox" id="set_autostart">
+          <span><b>Start when the computer starts</b>
+            <em>Keeps the queue alive across a reboot: interrupted downloads
+            resume where they stopped, and the queue is still there.</em></span>
+        </label>
+        <div class="hint" id="autostartHint" style="margin:2px 0 6px"></div>
+
         <div class="sgroup">Downloads</div>
         <label class="rowchk">
           <input type="checkbox" id="set_preview">
@@ -2497,6 +2506,7 @@ if("serviceWorker" in navigator){
 
 /* ---------- settings ---------- */
 const SETTING_FIELDS = {
+  autostart:       {id:"set_autostart",       type:"bool",  def:false},
   show_brand:      {id:"set_show_brand",      type:"bool",  def:true},
   review_before_download:{id:"set_preview",   type:"bool",  def:false},
   skip_existing:   {id:"set_skip_existing",   type:"bool",  def:true},
@@ -2588,6 +2598,27 @@ function closeSettings(){ $("settingsModal").hidden = true; }
 
 $("gearBtn").onclick = openSettings;
 $("set_download_dir").addEventListener("input", ()=> explainDownloadDir(lastState.settings || {}));
+/* Autostart is not a stored preference: flipping it installs or removes a
+   systemd user unit, so it is applied the moment it is clicked. */
+$("set_autostart").onchange = async (e)=>{
+  const want = e.target.checked;
+  const hint = $("autostartHint");
+  e.target.disabled = true;
+  hint.textContent = want ? "Setting up…" : "Removing…";
+  try{
+    const r = await api("/api/autostart", {method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({on: want})});
+    hint.textContent = r.message || "";
+    if(!r.ok){ e.target.checked = false; }
+  }catch(err){
+    e.target.checked = false;
+    hint.textContent = err.message;
+  }finally{
+    e.target.disabled = false;
+  }
+};
+
 $("clearHistory").onclick = async ()=>{
   if(!confirm("Forget every saved reading position?\n\nDownloaded files are not touched — only the page you were on.")) return;
   const btn = $("clearHistory");

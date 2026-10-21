@@ -126,7 +126,7 @@ def http_json(url: str, timeout: int = 60):
     """GET a URL and return parsed JSON. No retry here — callers that can
     recover (the resolver, the per-item probe) do their own attempts."""
 
-    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/2.3.0"})
+    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/2.4.0"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.load(r)
 
@@ -712,6 +712,8 @@ class Engine:
             "skip_existing": True,
             # Show the "reader" label in the reader header.
             "show_brand": True,
+            # Installed as a user service when switched on; off unless asked.
+            "autostart": False,
         }
         self._worker = None
         self._conn = None
@@ -721,6 +723,104 @@ class Engine:
         # the background from archive.org, once, so old rows explain themselves
         # without the user re-adding anything.
         threading.Thread(target=self.backfill_descriptions, daemon=True).start()
+
+    # ---- start-up integration
+    UNIT_NAME = "hardlyreading.service"
+
+    def _unit_dir(self) -> str:
+        base = os.environ.get("XDG_CONFIG_HOME") or os.path.expanduser("~/.config")
+        return os.path.join(base, "systemd", "user")
+
+    def autostart_supported(self) -> bool:
+        """Only systemd user services are wired up; other platforms say so."""
+        return bool(shutil.which("systemctl")) and sys.platform.startswith("linux")
+
+    def autostart_state(self) -> str:
+        """'on', 'off' or 'unsupported' — read from disk, not from the setting."""
+        if not self.autostart_supported():
+            return "unsupported"
+        return ("on" if os.path.isfile(os.path.join(self._unit_dir(), self.UNIT_NAME))
+                else "off")
+
+    def set_autostart(self, on: bool):
+        """Install or remove the user unit. Returns (ok, message).
+
+        The queue already survives a restart — state.json holds it and aria2
+        resumes .aria2 partials — so this only decides whether the server comes
+        back on its own.
+        """
+        if not self.autostart_supported():
+            return (False, "Automatic start is only wired up for systemd on Linux. "
+                           "On other systems, run the server from your own start-up "
+                           "shortcut; the queue and partial downloads survive either way.")
+        unit_dir = self._unit_dir()
+        unit = os.path.join(unit_dir, self.UNIT_NAME)
+        if not on:
+            try:
+                subprocess.run(["systemctl", "--user", "disable", "--now", self.UNIT_NAME],
+                               capture_output=True, timeout=25)
+            except Exception:
+                pass
+            try:
+                os.remove(unit)
+            except OSError:
+                pass
+            try:
+                subprocess.run(["systemctl", "--user", "daemon-reload"],
+                               capture_output=True, timeout=25)
+            except Exception:
+                pass
+            return (True, "Will not start automatically any more.")
+
+        here = os.path.dirname(os.path.abspath(__file__))
+        # sys.executable may be a virtualenv belonging to whatever launched the
+        # app. A unit must run a system interpreter that will still exist later.
+        interp = sys.executable
+        for cand in ("/usr/bin/python3", "/usr/local/bin/python3",
+                     shutil.which("python3") or ""):
+            if cand and os.path.isfile(cand) and "venv" not in cand:
+                interp = cand
+                break
+        # aria2c often lives outside the path a unit inherits, so pin it.
+        path_parts = ["/usr/local/bin", "/usr/bin", "/bin"]
+        brew = "/home/linuxbrew/.linuxbrew/bin"
+        if os.path.isdir(brew):
+            path_parts.insert(0, brew)
+        body = f"""[Unit]
+Description=HardlyReading (Internet Archive magazine, comic and PDF library)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory={here}
+ExecStart={interp} -B server.py --port {getattr(self, "port", 8788)}
+Environment=PATH={':'.join(path_parts)}
+Environment=IA_ARIA2={aria2c_path() or ''}
+Environment=PYTHONUNBUFFERED=1
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
+"""
+        try:
+            os.makedirs(unit_dir, exist_ok=True)
+            with open(unit, "w") as fh:
+                fh.write(body)
+        except OSError as e:
+            return (False, f"Cannot write {unit}: {e}")
+        try:
+            subprocess.run(["systemctl", "--user", "daemon-reload"],
+                           capture_output=True, timeout=25)
+            r = subprocess.run(["systemctl", "--user", "enable", self.UNIT_NAME],
+                               capture_output=True, timeout=25, text=True)
+            if r.returncode != 0:
+                return (False, (r.stderr or r.stdout or "systemctl failed").strip()[:200])
+        except Exception as e:
+            return (False, str(e))
+        return (True, "Starts with your session. Downloads interrupted by a "
+                      "restart resume from where they stopped.")
 
     def favourites(self) -> set:
         """Book keys marked as favourites."""

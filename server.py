@@ -45,7 +45,7 @@ ENGINE = engine.Engine()
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "HardlyReading/2.3.0"
+    server_version = "HardlyReading/2.4.0"
 
     def log_message(self, fmt, *args):
         pass  # quiet
@@ -594,7 +594,13 @@ class Handler(BaseHTTPRequestHandler):
                         v = v.strip()
                     ENGINE.settings[k] = v
                 ENGINE.save_state()
-            return self._send(200, {"settings": ENGINE.settings})
+            # Report the real service state, not only the stored flag: the unit
+            # can exist without the setting, or be removed by hand.
+            st = ENGINE.autostart_state()
+            if st != "unsupported":
+                ENGINE.settings["autostart"] = (st == "on")
+            return self._send(200, {"settings": ENGINE.settings,
+                                    "autostart_state": st})
 
         if path == "/api/pause":
             ENGINE.paused = bool(body.get("paused"))
@@ -649,6 +655,17 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:  # noqa: BLE001
                 return self._send(500, {"error": str(e)})
 
+        if path == "/api/autostart":
+            want = bool(body.get("on"))
+            ok, msg = ENGINE.set_autostart(want)
+            with ENGINE.lock:
+                if ok:
+                    ENGINE.settings["autostart"] = want
+                    ENGINE.save_state()
+            return self._send(200 if ok else 400,
+                              {"on": want, "ok": ok, "message": msg,
+                               "state": ENGINE.autostart_state()})
+
         if path == "/api/favourite":
             key = (body.get("key") or "").strip()
             if not key:
@@ -681,6 +698,9 @@ def main():
     no_browser = "--no-browser" in argv
 
     port = find_free_port(want, host)
+    # The unit this app writes must start the server the same way, port
+    # included, or "start on boot" would answer on a different address.
+    ENGINE.port = port
     srv = ThreadingHTTPServer((host, port), Handler)
     url = f"http://{'127.0.0.1' if host in ('0.0.0.0', '::') else host}:{port}"
 
