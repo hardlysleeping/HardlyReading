@@ -3,7 +3,22 @@
 Notable changes to HardlyReading. Versions are tagged on GitHub with matching
 release notes.
 
-## [2.1.10] — 2026-10-20
+## [2.2.0] — 2026-10-20
+
+### Changed
+
+- **One control height.** The queue row held four buttons at 37×25, 52×29,
+  31×12 and 58×21. Everything interactive is 28 px tall now: Read, the folder
+  icon, the dismiss cross, the details pill.
+- **Search cards line up.** Title, blurb and the `more` link each reserve their
+  space, so metadata sits at the same height across a row instead of stepping
+  down wherever a card happened to have a description. Measured: eight cards,
+  all 345 px, every `.y` and `.d` at identical offsets.
+- The `more` control hugs its own text instead of stretching the card width as a
+  divider, and "Add all results" is a secondary-size button rather than the
+  largest control in the header.
+
+
 
 ### Changed
 

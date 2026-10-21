@@ -132,6 +132,8 @@
   .btn:hover{background:#3f7cf0}
   .btn:disabled{opacity:.5;cursor:default}
   .btn.ghost{background:transparent;color:var(--text);border:1px solid var(--line)}
+  /* A bulk secondary action sits below the primary in weight and size. */
+  .btn.ghost.md{padding:8px 14px;font-size:12.5px;border-radius:8px}
   .btn.ghost:hover{background:var(--panel2)}
 
   input[type=search],input[type=text]{
@@ -205,18 +207,22 @@
      clicking the text expands it in place. Sized and coloured to be read, not
      to be dim background: at 11.5px dim grey it was invisible at card width. */
   .res .d{margin-top:7px;font-size:12.5px;line-height:1.5;color:#d3dae8;
+    min-height:3.15em;
     display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
     overflow:hidden;cursor:pointer;padding-top:7px;
     border-top:1px solid rgba(255,255,255,.06)}
   .res .d:hover{color:var(--text)}
   /* A labelled arrow, because a clamp with no control does not look expandable. */
-  .res .dmore{margin-top:5px;font-size:11px;color:var(--accent2);cursor:pointer;
+  /* Hugs its own text: full width, it read as a divider rather than a control. */
+  .res .dmore{display:inline-flex;align-items:center;gap:3px;margin-top:5px;
+    font-size:11px;color:var(--accent2);cursor:pointer;
     user-select:none;letter-spacing:.02em}
   .res .dmore:hover{text-decoration:underline}
   .res.expand .dmore::after{}
   .res.expand .d{-webkit-line-clamp:unset;display:block}
   /* A card with no description keeps its height so the grid rows line up. */
-  .res .d.empty{visibility:hidden}
+  .res .d.empty,.res .dmore.empty{visibility:hidden}
+  .res .dmore{min-height:1.1em}
   .res .acts{display:flex;gap:6px;padding:0 9px 9px}
   .res .acts button{flex:1;background:var(--panel);border:1px solid var(--line);
     color:var(--dim);border-radius:7px;font-size:11px;padding:5px 0;cursor:pointer}
@@ -224,7 +230,12 @@
   .res .acts button.danger:hover{color:var(--err);border-color:var(--err)}
   .res img{width:100%;height:150px;object-fit:cover;display:block;background:#0b0d11}
   .res .body{padding:11px 12px 13px}
+  /* Two lines of title and two of blurb are reserved on every card: without
+     this, a card with no description left a hole and its neighbours' metadata
+     sat at a different height. */
   .res .t{font-size:13.5px;font-weight:600;line-height:1.4;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
+    overflow:hidden;min-height:2.8em;
     display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
   .res .y{font-size:11.5px;color:var(--dim);margin-top:4px}
 
@@ -296,10 +307,13 @@
   /* In-flight files. Thin bars, because a dozen of them must not shout. */
   /* Actions sit in one row under the card: stacking them down the right edge
      left a tall empty column on short cards. */
-  .jacts{display:flex;gap:6px;align-items:center;margin-top:10px;flex-wrap:wrap}
-  .jacts .btn.sm{padding:5px 11px;font-size:11.5px}
-  .btn.ico{padding:5px 8px;display:inline-flex;align-items:center;
-    justify-content:center;line-height:0}
+  /* One control height everywhere. Four buttons in a row were 37x25, 52x29,
+    31x12 and 58x21 — every one a different size. */
+  .jacts{display:flex;gap:7px;align-items:center;margin-top:10px;flex-wrap:wrap}
+  .btn.sm,.jacts .btn.sm,.rfile .btn.sm{height:28px;padding:0 12px;
+    display:inline-flex;align-items:center;justify-content:center;
+    font-size:11.5px;line-height:1}
+  .btn.ico{width:28px;height:28px;padding:0;flex:none}
   .btn.ico svg{display:block}
   .qlive{margin-top:9px;display:flex;flex-direction:column;gap:4px}
   .ql{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--dim)}
@@ -399,9 +413,10 @@
   /* A labelled toggle: a bare chevron does not read as "there is more here". */
   /* A bordered pill, not bare text: it has to look like something you press. */
   .caret{color:var(--accent2);font-size:11px;line-height:1;margin-left:auto;
-    flex:none;white-space:nowrap;cursor:pointer;
+    flex:none;white-space:nowrap;cursor:pointer;height:28px;
+    display:inline-flex;align-items:center;padding:0 10px;
     border:1px solid rgba(79,140,255,.35);border-radius:6px;
-    padding:4px 8px;background:rgba(79,140,255,.07)}
+    background:rgba(79,140,255,.07)}
   .caret:hover{background:rgba(79,140,255,.16);color:var(--text)}
   .rfile .pg + .caret{margin-left:12px}
   .rfile:hover .caret{text-decoration:underline}
@@ -569,7 +584,7 @@ Support the Archive</a>
         <span class="hint" style="margin:0">Results are served by them.</span>
       </div>
       <div class="row" id="addAllRow" style="display:none">
-        <button class="btn" id="addAllBtn">Add all results to queue</button>
+        <button class="btn ghost md" id="addAllBtn">Add all results to queue</button>
         <span class="hint" style="margin:0" id="addAllHint"></span>
       </div>
       <div class="selbar" id="selBar" hidden>
@@ -1389,8 +1404,10 @@ function renderCards(docs){
       <div class="body">
         <div class="t">${esc(d.title)}</div>
         <div class="y${isColl?" coll":""}">${esc(y)}</div>
-        ${d.desc ? `<div class="d" title="Click the arrow for the whole description">${esc(d.desc)}</div>
-          <div class="dmore" title="Show the whole description">▾ more</div>` : ""}
+        ${d.desc
+          ? `<div class="d" title="Click the arrow for the whole description">${esc(d.desc)}</div>
+             <div class="dmore" title="Show the whole description">▾ more</div>`
+          : `<div class="d empty"></div><div class="dmore empty"></div>`}
       </div>
       ${acts}
     </div>`;
