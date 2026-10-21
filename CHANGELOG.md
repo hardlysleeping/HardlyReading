@@ -3,6 +3,19 @@
 Notable changes to HardlyReading. Versions are tagged on GitHub with matching
 release notes.
 
+## [2.1.6] — 2026-10-20
+
+### Fixed
+
+- **A downloaded book could not be opened at all.** 2.1.3 removed the duplicate
+  Read from the expanded panel, but the row itself never had one, so every
+  library row had zero buttons and reading anything already on disk was
+  impossible. Read sits on the row now, next to Details, and opens the book.
+- That Read button also shared the `data-open` attribute with the queue's
+  "Open folder", so the library handler swallowed the queue's clicks. The
+  library action is `data-read`, which the queue already used for its own
+  per-job Read.
+
 ## [2.1.5] — 2026-10-20
 
 ### Changed
@@ -359,6 +372,7 @@ First release.
 - Built-in CBZ / CBR / PDF reader; CBR needs `unrar`, `bsdtar` or `7z`
 - Cross-platform launcher that finds `aria2c` and opens the browser
 
+[2.1.6]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.1.6
 [2.1.5]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.1.5
 [2.1.4]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.1.4
 [2.1.3]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.1.3

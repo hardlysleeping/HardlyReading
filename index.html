@@ -21,7 +21,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="theme-color" content="#0f1115">
 <meta name="description" content="Download magazines, comics, PDFs and documents from the Internet Archive.">
-<link rel="manifest" href="/manifest.webmanifest">
 <link rel="icon" href="/icons/favicon-32.png" sizes="32x32">
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -906,9 +905,9 @@ document.addEventListener("click", async (e)=>{
     return;
   }
   // Library row detail actions.
-  const op = e.target.closest("[data-open]");
-  if(op){
-    const it = libItems.find(x => x.key === op.dataset.open);
+  const lread = e.target.closest("[data-read]");
+  if(lread){
+    const it = libItems.find(x => x.key === lread.dataset.read);
     if(it) openBook(it);
     return;
   }
@@ -1641,6 +1640,10 @@ function rowHtml(it){
         ${bar}
       </div>
       ${badge}
+      ${it.readable && !it.partial
+        ? `<button class="btn sm" data-read="${esc(it.key)}"
+                   title="Read this file">Read</button>`
+        : ""}
       <span class="pg">${it.kind === "cbz" ? it.pages + " pages" : "PDF"}</span>
       <span class="caret" title="${open?"Hide details":"Show details"}">${open ? "▴ hide" : "▾ details"}</span>
     </div>
@@ -2194,13 +2197,14 @@ function paintPage(){
   $("rnext").disabled = s.count > 0 && s.page >= s.count - 1;
 }
 
-/* Service worker: installable app + an offline shell. It never caches /api/*,
-   so a stale queue is impossible; if registration fails the app behaves exactly
-   as before. */
-if("serviceWorker" in navigator && location.protocol !== "file:"){
-  window.addEventListener("load", ()=>{
-    navigator.serviceWorker.register("/sw.js").catch(()=>{ /* http on a LAN IP without TLS */ });
-  });
+/* No service worker. It cached the app shell, which meant every change kept
+   showing the previous page until the cache was cleared by hand. The app is
+   served locally, so there is nothing to gain from offline caching. Existing
+   registrations are removed below so old caches go away too. */
+if("serviceWorker" in navigator){
+  navigator.serviceWorker.getRegistrations()
+    .then(rs => rs.forEach(r => r.unregister()))
+    .catch(()=>{});
 }
 
 /* ---------- settings ---------- */

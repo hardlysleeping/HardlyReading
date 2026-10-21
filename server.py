@@ -45,7 +45,7 @@ ENGINE = engine.Engine()
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "HardlyReading/2.1.5"
+    server_version = "HardlyReading/2.1.6"
 
     def log_message(self, fmt, *args):
         pass  # quiet
@@ -248,10 +248,12 @@ class Handler(BaseHTTPRequestHandler):
         # PWA assets. The service worker must be served from the root to get
         # scope "/", and a manifest needs the application/manifest+json type or
         # browsers ignore it.
-        if path == "/manifest.webmanifest":
-            return self._asset("manifest.webmanifest", "application/manifest+json")
+        # A stale service worker is served as an empty script that unregisters
+        # itself, so browsers that already installed one drop it on next visit.
         if path == "/sw.js":
-            return self._asset("sw.js", "text/javascript; charset=utf-8")
+            return self._send(
+                200, "self.registration.unregister();",
+                "text/javascript; charset=utf-8")
         if path.startswith("/icons/"):
             name = path[len("/icons/"):]
             if "/" in name or not name.endswith(".png"):
