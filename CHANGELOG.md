@@ -3,7 +3,20 @@
 Notable changes to HardlyReading. Versions are tagged on GitHub with matching
 release notes.
 
-## [2.1.9] — 2026-10-20
+## [2.1.10] — 2026-10-20
+
+### Changed
+
+- **Queue card actions are one row, not a stack.** Open folder / Read / Remove
+  ran down the right edge, which held a tall empty column on every short card.
+  They now sit side by side under the card, with the status pill alone in the
+  right column.
+- **Open folder is an icon** — an inline folder glyph that inherits the button's
+  colour, so there is no asset to load and nothing to render wrong.
+- Remove is a single ✕ icon; there were two remove buttons on the same card, one
+  labelled and one not.
+
+
 
 ### Added
 

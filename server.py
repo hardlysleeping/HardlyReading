@@ -45,7 +45,7 @@ ENGINE = engine.Engine()
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "HardlyReading/2.1.9"
+    server_version = "HardlyReading/2.1.10"
 
     def log_message(self, fmt, *args):
         pass  # quiet
