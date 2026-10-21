@@ -1052,6 +1052,7 @@ function renderJobs(st){
     const id = el.dataset.job;
     el.onclick = (e)=>{
       if(e.target.closest("button")) return;   // controls handle themselves
+      if(selecting()) return;                  // finishing a drag-select
       // Opening a card that has never been fetched triggers one request; the
       // answer is kept for the rest of the session.
       if(expandedJobs.has(id)) expandedJobs.delete(id);
@@ -1061,6 +1062,13 @@ function renderJobs(st){
   });
   if($("queuePager")) $("queuePager").innerHTML = pagerBar("queue", jobs.length, "jobs");
 }
+
+/* A click that ends a text selection is not a click on the card: dragging to
+   copy a title used to collapse the row under the pointer. */
+const selecting = () => {
+  const sel = window.getSelection();
+  return !!(sel && String(sel).length);
+};
 
 /* Job card actions are delegated: the list is re-rendered on every poll, so a
    per-button handler would be destroyed 1.2s after it is attached. */
@@ -1494,6 +1502,7 @@ function renderCards(docs){
   host.querySelectorAll(".res").forEach(el=>{
     el.onclick = (e)=>{
       if(e.target.closest("button")) return;   // action buttons handle their own click
+      if(selecting()) return;                  // finishing a drag-select
       // The blurb is its own control: expand it instead of toggling selection,
       // which is what clicking anywhere else on the card does.
       if(e.target.closest(".d, .dmore")){
@@ -1746,6 +1755,7 @@ function renderLibrary(){
   $("libList").querySelectorAll(".gcard").forEach(el=>{
     el.onclick = (ev)=>{
       if(ev.target.closest("button")) return;
+      if(selecting()) return;
       // In grid view there is no row to expand, so a click reads the book.
       const it = libItems.find(x => x.key === el.dataset.key);
       if(it && it.downloaded) openBook(it);
@@ -1754,6 +1764,7 @@ function renderLibrary(){
   $("libList").querySelectorAll(".rfile").forEach(el => {
     el.onclick = (ev) => {
       if(ev.target.closest("button, a")) return;   // row actions handle themselves
+      if(selecting()) return;                      // finishing a drag-select
       if(libSelectMode){
         const k = el.dataset.key;
         if(libSelected.has(k)) libSelected.delete(k); else libSelected.add(k);

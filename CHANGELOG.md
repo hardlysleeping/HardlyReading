@@ -3,7 +3,20 @@
 Notable changes to HardlyReading. Versions are tagged on GitHub with matching
 release notes.
 
-## [2.4.0] — 2026-10-20
+## [2.4.1] — 2026-10-20
+
+### Fixed
+
+- **A large PDF looked empty in the reader.** `/api/book` answered every request
+  with the whole file, so pdf.js could not fetch the cross-reference table at the
+  tail or a single page — it waited for the entire scan. The route serves byte
+  ranges now (206 with `Content-Range`, suffix ranges for the tail, 416 for an
+  impossible one). A 164 MB, 196-page file opens on page 1 in about a second.
+- **Dragging to copy text collapsed the row.** Any click on a library row, queue
+  card, grid card or search card toggled it, including the click that ends a
+  text selection. Those handlers ignore a click while text is selected.
+
+
 
 ### Added
 

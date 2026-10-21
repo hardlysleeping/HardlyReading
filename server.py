@@ -45,7 +45,7 @@ ENGINE = engine.Engine()
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "HardlyReading/2.4.0"
+    server_version = "HardlyReading/2.4.1"
 
     def log_message(self, fmt, *args):
         pass  # quiet
@@ -463,14 +463,51 @@ class Handler(BaseHTTPRequestHandler):
                 size = os.path.getsize(target)
             except OSError as e:
                 return self._send(500, {"error": str(e)})
-            self.send_response(200)
+            # Byte ranges matter here: pdf.js asks for the tail of the file to
+            # find the cross-reference table, and for single pages as you jump
+            # around. Answering every request with the whole file made a big
+            # scan look blank until all of it had arrived.
+            start, end = 0, size - 1
+            status = 200
+            rng = self.headers.get("Range") or ""
+            if rng.startswith("bytes="):
+                part = rng.split("=", 1)[1].split(",")[0].strip()
+                a, _, b = part.partition("-")
+                try:
+                    if a:
+                        start = max(0, int(a))
+                        end = min(size - 1, int(b)) if b else size - 1
+                    elif b:                      # suffix range: last N bytes
+                        start = max(0, size - int(b))
+                except ValueError:
+                    start, end = 0, size - 1
+                if start > end or start >= size:
+                    self.send_response(416)
+                    self.send_header("Content-Range", f"bytes */{size}")
+                    self.send_header("Content-Length", "0")
+                    self.end_headers()
+                    return
+                status = 206
+
+            length = end - start + 1
+            self.send_response(status)
             self.send_header("Content-Type", "application/pdf")
-            self.send_header("Content-Length", str(size))
+            self.send_header("Content-Length", str(length))
+            self.send_header("Accept-Ranges", "bytes")
+            if status == 206:
+                self.send_header("Content-Range", f"bytes {start}-{end}/{size}")
             self.send_header("Content-Disposition", "inline")
             self.end_headers()
             try:
                 with open(target, "rb") as fh:
-                    shutil.copyfileobj(fh, self.wfile, length=1 << 20)
+                    fh.seek(start)
+                    remaining = length
+                    while remaining > 0:
+                        chunk = fh.read(min(1 << 20, remaining))
+                        if not chunk:
+                            break
+                        self.wfile.write(chunk)
+                        remaining -= len(chunk)
             except OSError:
                 pass  # client went away mid-stream
             return
