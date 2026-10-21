@@ -339,6 +339,24 @@
     border:1px solid var(--line);background:var(--panel2)}
   .lcov-none{display:grid;place-items:center;font-size:9px;color:var(--dim);
     letter-spacing:.04em}
+  /* Library rows open like the queue's: the summary line stays one line, and
+     the detail drops underneath with the facts and the per-row actions. */
+  .rfilewrap{display:flex;flex-direction:column}
+  .rfilewrap .rfile{border-radius:8px}
+  .rfile.open{border-color:rgba(79,140,255,.5);border-bottom-left-radius:0;
+    border-bottom-right-radius:0}
+  .caret{color:var(--dim);font-size:15px;line-height:1;margin-left:2px;
+    transition:transform .15s;flex:none}
+  .rfile.open .caret{transform:rotate(90deg);color:var(--accent)}
+  .libdetail{border:1px solid rgba(79,140,255,.5);border-top:none;
+    border-radius:0 0 8px 8px;background:rgba(79,140,255,.04);
+    padding:10px 14px 11px 58px;display:flex;flex-wrap:wrap;gap:10px 22px;
+    align-items:flex-start}
+  .libdetail dl{display:grid;grid-template-columns:auto 1fr;gap:3px 14px;
+    margin:0;font-size:11.5px;flex:1;min-width:220px}
+  .libdetail dt{color:var(--dim)}
+  .libdetail dd{margin:0;color:var(--text);word-break:break-word}
+  .libacts{display:flex;gap:6px;flex-wrap:wrap}
   .rfile.pending{border-style:dashed}
   .pendstate{font-size:11.5px;color:#f0b429}
   .rfile .btn.sm{padding:5px 10px}
@@ -672,6 +690,11 @@ document.addEventListener("change", (e) => {
   }
 });
 
+// Library rows expand on click too. Kept outside the render for the same
+// reason the queue's is: the list is redrawn on every poll and a row you opened
+// must not slam shut underneath you.
+const expandedLib = new Set();
+
 // Queue cards expand on click. The open set and the fetched item lists live
 // outside the render, so the 1.2 s poll cannot collapse a card you opened.
 const expandedJobs = new Set();
@@ -844,6 +867,43 @@ document.addEventListener("click", async (e)=>{
     }catch(err){ toast(err.message); dl.disabled = false; }
     return;
   }
+  // Library row detail actions.
+  const op = e.target.closest("[data-open]");
+  if(op){
+    const it = libItems.find(x => x.key === op.dataset.open);
+    if(it) openBook(it);
+    return;
+  }
+  const rv = e.target.closest("[data-reveal]");
+  if(rv){
+    try{
+      const r = await api("/api/reveal", {method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({id: rv.dataset.reveal})});
+      if(r && r.copied) toast("Folder path copied: " + r.opened);
+      else toast("Opened the folder");
+    }catch(err){
+      // A file manager is a desktop thing; on a remote host say so plainly.
+      toast("Could not open a folder here: " + err.message);
+    }
+    return;
+  }
+  const dr = e.target.closest("[data-delrow]");
+  if(dr){
+    const it = libItems.find(x => x.key === dr.dataset.delrow);
+    if(!it) return;
+    if(!confirm(`Delete "${it.name}" from disk?\n\nThe file is removed; reading history stays.`)) return;
+    dr.disabled = true;
+    try{
+      await api("/api/delete", {method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({id: it.job, file: it.name})});
+      toast("Deleted");
+      await loadLibrary();
+    }catch(err){ toast(err.message); dr.disabled = false; }
+    return;
+  }
+
   const st = e.target.closest("[data-stream]");
   if(st){
     st.disabled = true;
@@ -1451,12 +1511,59 @@ function renderLibrary(){
         renderLibrary();
         return;
       }
-      if(el.classList.contains("dis")) return;
-      const it = libItems.find(x => x.key === el.dataset.key);
-      if(it && it.downloaded) openBook(it);
+      // A plain click opens the row's own detail (size, pages, source, actions).
+      // Reading is an explicit Read in that detail, so a stray click on the list
+      // no longer throws a book over the screen.
+      const k = el.dataset.key;
+      if(expandedLib.has(k)) expandedLib.delete(k); else expandedLib.add(k);
+      renderLibrary();
     };
   });
   updateLibSelBar();
+}
+
+/* What a library row hides: the full name (it is cut off in the row), the size,
+   the page count, where it came from, and the actions that only make sense once
+   you are looking at one book rather than a list of them. */
+function libDetailHtml(it){
+  const rows = [];
+  rows.push(["File", it.name || it.series || "—"]);
+  if(it.size) rows.push(["Size", fmtBytes(it.size)]);
+  if(it.pages) rows.push(["Pages", String(it.pages)]);
+  if(it.progress) rows.push(["Reading", `${it.progress} of ${it.pages || "?"}`
+    + (it.pages ? ` · ${Math.round(it.progress / it.pages * 100)}%` : "")]);
+  if(it.kind){
+    const fmt = {cbz:"CBZ", cbr:"CBR", pdf:"PDF", cbt:"CBT"}[it.kind]
+             || it.kind.toUpperCase();
+    rows.push(["Format", fmt]);
+  }
+  if(it.status && !it.downloaded) rows.push(["State", it.status]);
+
+  const actions = [];
+  if(it.downloaded && it.readable && !it.partial){
+    actions.push(`<button class="btn sm" data-open="${esc(it.key)}">Read</button>`);
+    actions.push(`<button class="btn ghost sm" data-reveal="${esc(it.job)}"
+       title="Show this file in the file manager">Show in folder</button>`);
+    actions.push(`<button class="btn ghost sm" data-delrow="${esc(it.key)}"
+       title="Delete this file from disk">Delete</button>`);
+  } else if(it.identifier){
+    actions.push(`<button class="btn sm" data-stream="${esc(it.job)}"
+       data-name="${esc(it.name)}" data-ident="${esc(it.identifier)}"
+       data-key="${esc(it.key)}"
+       title="Read straight from archive.org — nothing is downloaded">Read</button>`);
+  }
+  if(it.downloaded && it.identifier && it.item_url){
+    actions.push(`<a class="btn ghost sm" href="${esc(it.item_url)}" target="_blank"
+       rel="noopener">On archive.org</a>`);
+  } else if(!it.downloaded && it.item_url){
+    actions.push(`<a class="btn ghost sm" href="${esc(it.item_url)}" target="_blank"
+       rel="noopener">On archive.org</a>`);
+  }
+
+  return `<div class="libdetail">
+    <dl>${rows.map(([k,v])=>`<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}</dl>
+    ${actions.length ? `<div class="libacts">${actions.join("")}</div>` : ""}
+  </div>`;
 }
 
 function rowHtml(it){
@@ -1487,16 +1594,21 @@ function rowHtml(it){
              src="/api/thumb?id=${encodeURIComponent(it.job)}&file=${encodeURIComponent(it.name)}"
              onerror="this.outerHTML='<span class=&quot;lcov lcov-none&quot;></span>'">`
     : `<span class="lcov lcov-none" title="${it.kind === "pdf" ? "PDF" : ""}">${it.kind === "pdf" ? "PDF" : ""}</span>`;
-  return `<div class="rfile${it.readable?"":" dis"}${on}${fin}" data-key="${esc(it.key)}"
+  const open = expandedLib.has(it.key);
+  return `<div class="rfilewrap">
+    <div class="rfile${it.readable?"":" dis"}${on}${fin}${open?" open":""}" data-key="${esc(it.key)}"
                data-job="${esc(it.job)}" data-name="${esc(it.name)}">
-    ${tick}
-    ${cover}
-    <div class="rlinfo">
-      <span class="nm">${esc(it.name)}</span>
-      ${bar}
+      ${tick}
+      ${cover}
+      <div class="rlinfo">
+        <span class="nm">${esc(it.name)}</span>
+        ${bar}
+      </div>
+      ${badge}
+      <span class="pg">${it.kind === "cbz" ? it.pages + " pages" : "PDF"}</span>
+      <span class="caret">›</span>
     </div>
-    ${badge}
-    <span class="pg">${it.kind === "cbz" ? it.pages + " pages" : "PDF"}</span>
+    ${open ? libDetailHtml(it) : ""}
   </div>`;
 }
 
@@ -1529,15 +1641,20 @@ function pendingRowHtml(it, on, tick, exists){
   const open = it.item_url
     ? `<a class="btn ghost sm" href="${esc(it.item_url)}" target="_blank"
           rel="noopener" title="Open on archive.org without downloading">Open</a>` : "";
-  return `<div class="rfile pending${on}" data-key="${esc(it.key)}"
+  const isOpen = expandedLib.has(it.key);
+  return `<div class="rfilewrap">
+    <div class="rfile pending${on}${isOpen?" open":""}" data-key="${esc(it.key)}"
                data-job="${esc(it.job)}" data-name="${esc(it.name)}">
-    ${tick}
-    <div class="rlinfo">
-      <span class="nm">${esc(it.name || it.series)}</span>
-      <span class="pendstate">${esc(state)}</span>
+      ${tick}
+      <div class="rlinfo">
+        <span class="nm">${esc(it.name || it.series)}</span>
+        <span class="pendstate">${esc(state)}</span>
+      </div>
+      ${read}${act}${open}
+      <span class="pg">${esc(label)}</span>
+      <span class="caret">›</span>
     </div>
-    ${read}${act}${open}
-    <span class="pg">${esc(label)}</span>
+    ${isOpen ? libDetailHtml(it) : ""}
   </div>`;
 }
 

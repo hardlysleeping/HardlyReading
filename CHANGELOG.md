@@ -3,6 +3,32 @@
 Notable changes to HardlyReading. Versions are tagged on GitHub with matching
 release notes.
 
+## [2.1.1] — 2026-10-20
+
+### Added
+
+- **Library rows expand.** Clicking a row opens its detail instead of throwing a
+  book at the reader: full file name, size, page count, where you are in it, and
+  the format. The open panel carries the row's own actions — **Read**,
+  **Show in folder**, **Delete**, and a link to the item on archive.org when
+  there is one. Clicking the row again closes it, and an open row stays open
+  across the library poll.
+- **Show in folder** opens the file manager at the book's folder, or says so
+  plainly when there is no file manager to open (a server, a container).
+
+### Changed
+
+- A plain click on a library row no longer opens the reader. Reading is an
+  explicit Read in the row's detail, so a stray click on a list of files cannot
+  take over the screen.
+
+### Fixed
+
+- The row summary and the detail panel disagreed about reading position
+  (`13/52` against `14 of 52`); both now report the stored position.
+- Archives were labelled by their storage kind in the detail panel; CBR and CBZ
+  now print as such instead of `CB7`-style truncation.
+
 ## [2.1.0] — 2026-10-20
 
 ### Added
@@ -269,6 +295,7 @@ First release.
 - Built-in CBZ / CBR / PDF reader; CBR needs `unrar`, `bsdtar` or `7z`
 - Cross-platform launcher that finds `aria2c` and opens the browser
 
+[2.1.1]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.1.1
 [2.1.0]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.1.0
 [2.0.2]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.0.2
 [2.0.1]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.0.1

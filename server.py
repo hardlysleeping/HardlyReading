@@ -18,6 +18,7 @@ import json
 import os
 import shutil
 import socket
+import subprocess
 import sys
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -44,7 +45,7 @@ ENGINE = engine.Engine()
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "HardlyReading/2.1.0"
+    server_version = "HardlyReading/2.1.1"
 
     def log_message(self, fmt, *args):
         pass  # quiet
@@ -574,6 +575,33 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, ENGINE.clear_history())
             except Exception as e:  # noqa: BLE001
                 return self._send(500, {"error": str(e)})
+
+        if path == "/api/reveal":
+            # Open the file manager at this book's folder. A local convenience:
+            # on a headless or remote server it simply fails and the UI says so
+            # rather than pretending something opened. The body is already
+            # parsed by do_POST; re-reading it here would crash.
+            jid = (body.get("id") or "").strip()
+            folder = self._resolve_dir(jid) if jid else ""
+            if not folder or not os.path.isdir(folder):
+                return self._send(404, {"error": "no folder for that row"})
+            opener = None
+            if sys.platform.startswith("win"):
+                opener = ["explorer", os.path.normpath(folder)]
+            elif sys.platform == "darwin":
+                opener = ["open", folder]
+            elif shutil.which("xdg-open"):
+                opener = ["xdg-open", folder]
+            if not opener:
+                # No GUI to open: hand the path back so the UI can show it,
+                # which is still more useful than an error with no answer.
+                return self._send(200, {"opened": folder, "copied": True})
+            try:
+                subprocess.Popen(opener, stdout=subprocess.DEVNULL,
+                                 stderr=subprocess.DEVNULL)
+            except OSError as e:
+                return self._send(500, {"error": str(e)})
+            return self._send(200, {"opened": folder})
 
         if path == "/api/delete":
             try:

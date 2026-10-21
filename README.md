@@ -188,6 +188,12 @@ deletion, because there is nothing to delete.
 Library rows carry a real cover — page one, scaled to 96 px and cached — so the
 shelf looks like a shelf. PDFs get a placeholder rather than a rendered cover.
 
+Clicking a row expands it rather than opening the book: the panel underneath
+shows the full file name, size, page count, reading position and format, with
+that row's actions — **Read**, **Show in folder**, **Delete**, and a link to the
+item on archive.org. Reading is an explicit choice, so a stray click on a list
+of files cannot take over the screen.
+
 ## The queue is a real queue: you control the order
 
 Adding a link starts it straight away; when a job finishes the next one starts
