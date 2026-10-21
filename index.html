@@ -287,13 +287,16 @@
     font-size:11px;line-height:1;padding:4px 6px;border-radius:5px;cursor:pointer}
   .reorder button:hover:not(:disabled){color:var(--text);border-color:var(--accent)}
   .reorder button:disabled{opacity:.28;cursor:default}
-  /* Support button: a real button, because the app is unusable without them.
-     Kept off the primary accent so it reads as support, not as the next step. */
-  .support{display:flex;align-items:center;gap:12px;margin-top:12px;flex-wrap:wrap}
-  .support-btn{text-decoration:none;background:rgba(124,108,255,.12);
-    border:1px solid rgba(124,108,255,.45);color:var(--text)}
-  .support-btn:hover{background:rgba(124,108,255,.22);border-color:var(--accent);
-    color:#fff;text-decoration:none}
+  /* Support: a quiet pill, not a call to action. Small type, no accent border,
+     and the logo carries the recognition so the label can stay short. Hover is
+     the only thing that lifts it, which keeps the eye on Add/Download. */
+  .support{display:flex;align-items:center;gap:12px;margin-top:10px;flex-wrap:wrap}
+  .support-btn{display:inline-flex;align-items:center;text-decoration:none;
+    padding:4px 11px 4px 5px;border-radius:999px;font-size:11.5px;
+    color:var(--dim);background:rgba(255,255,255,.03);
+    border:1px solid var(--line);transition:color .15s,border-color .15s,background .15s}
+  .support-btn:hover{color:var(--text);text-decoration:none;
+    border-color:rgba(255,255,255,.22);background:rgba(255,255,255,.06)}
   .pdfhost{flex:1;overflow:auto;background:#0b0d11;display:flex;
     justify-content:center;align-items:flex-start;padding:12px}
   .pdfhost canvas{box-shadow:0 4px 24px rgba(0,0,0,.5);background:#fff}
@@ -442,9 +445,10 @@ https://archive.org/search?query=…"></textarea>
       </div>
       <div class="hint">A <code>/details/</code> link is grabbed in full. Collection links pull every member.</div>
       <div class="support">
-        <a class="btn support-btn" href="https://archive.org/donate"
-           target="_blank" rel="noopener">Support the Internet Archive</a>
-        <span class="hint" style="margin:0">Every scan comes from them. Nothing here works without them.</span>
+        <a class="support-btn" href="https://archive.org/donate"
+           target="_blank" rel="noopener" title="Every scan comes from the Internet Archive">
+Support the Archive</a>
+        <span class="hint" style="margin:0">Every scan comes from them.</span>
       </div>
     </div>
 
@@ -470,9 +474,10 @@ https://archive.org/search?query=…"></textarea>
       </div>
       <div id="searchMeta" class="hint"></div>
       <div class="support">
-        <a class="btn support-btn" href="https://archive.org/donate"
-           target="_blank" rel="noopener">Support the Internet Archive</a>
-        <span class="hint" style="margin:0">Results are served by them — donate to keep it online.</span>
+        <a class="support-btn" href="https://archive.org/donate"
+           target="_blank" rel="noopener" title="Results are served by the Internet Archive">
+Support the Archive</a>
+        <span class="hint" style="margin:0">Results are served by them.</span>
       </div>
       <div class="row" id="addAllRow" style="display:none">
         <button class="btn" id="addAllBtn">Add all results to queue</button>
