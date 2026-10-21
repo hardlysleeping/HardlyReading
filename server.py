@@ -125,8 +125,24 @@ class Handler(BaseHTTPRequestHandler):
         return j.dir if j and j.dir else None
 
     @staticmethod
-    def _library_item(job, series, name, path, entry):
-        """One library row: page count, kind and reading position for a file."""
+    def _library_item(job, series, name, path, entry, status="done"):
+        """One library row: page count, kind and reading position for a file.
+
+        Rows can also describe work that is not on disk yet (queued, planned,
+        failed): the Library is where you look for a title, so a known item
+        with no file should say "not downloaded" and offer to fetch it rather
+        than be invisible until it lands.
+        """
+        ident = (entry or {}).get("identifier") or ""
+        if not os.path.isfile(path):
+            return {
+                "job": job, "key": engine.book_key(entry), "series": series,
+                "name": name, "size": (entry or {}).get("size", 0),
+                "pages": 0, "kind": "pending", "readable": False,
+                "progress": 0, "finished": False, "downloaded": False,
+                "status": status, "identifier": ident,
+                "item_url": f"https://archive.org/details/{ident}" if ident else "",
+            }
         pages = engine.comic_pages(path)
         is_pdf = path.lower().endswith(".pdf")
         if not pages and is_pdf:
@@ -146,25 +162,44 @@ class Handler(BaseHTTPRequestHandler):
             "readable": bool(pages) or is_pdf,
             "progress": done,
             "finished": bool(pages) and done >= len(pages) - 1,
+            # The Library needs to tell "on disk" from "merely queued", and to
+            # offer a link back to the item it came from.
+            "downloaded": True,
+            # A file that exists mid-download is not readable yet; the row must
+            # say so instead of offering a reader for a half-written archive.
+            "partial": status in ("downloading", "verifying", "resume"),
+            "status": status,
+            "identifier": ident,
+            "item_url": f"https://archive.org/details/{ident}" if ident else "",
         }
 
     @staticmethod
     def _library_from_jobs():
         """Library rows contributed by finished jobs, plus the real files they
         cover (so the folder scan can skip duplicates)."""
+        PENDING = ("planned", "queued", "resume", "resolving", "downloading",
+                   "verifying", "failed")
         items, seen = [], set()
         for j in ENGINE.jobs:
-            if j.status != "done" or not j.dir or not os.path.isdir(j.dir):
+            if not j.items or j.status == "cancelled":
+                continue
+            if j.status != "done" and j.status not in PENDING:
                 continue
             for e in j.items:
                 if e.get("skip"):
                     continue
-                p = os.path.join(j.dir, e.get("outname") or "")
-                if not os.path.isfile(p):
+                name = e.get("outname") or ""
+                if not name:
                     continue
-                seen.add(os.path.realpath(p))
+                p = os.path.join(j.dir, name) if j.dir else name
+                exists = bool(j.dir) and os.path.isfile(p)
+                if exists:
+                    seen.add(os.path.realpath(p))
+                elif j.status == "done":
+                    # Promised by a finished job but not there: nothing to show.
+                    continue
                 items.append(Handler._library_item(
-                    j.id, j.series or j.label, e.get("outname"), p, e))
+                    j.id, j.series or j.label, name, p, e, status=j.status))
         return items, seen
 
     # ---------- routes
@@ -207,7 +242,14 @@ class Handler(BaseHTTPRequestHandler):
                 filt = (qs.get("filter") or ["all"])[0]
                 if filt not in ("all", "collection", "bundle"):
                     filt = "all"
-                res = engine.search_documents(query, page=page, kind=filt)
+                try:
+                    rows = int((qs.get("rows") or ["24"])[0])
+                except ValueError:
+                    rows = 24
+                rows = max(10, min(100, rows))
+                res = engine.search_documents(query, page=page, rows=rows,
+                                              kind=filt)
+                res["rows"] = rows
                 return self._send(200, res)
             except Exception as e:  # noqa: BLE001
                 return self._send(502, {"error": str(e)})
@@ -402,8 +444,12 @@ class Handler(BaseHTTPRequestHandler):
                         continue
                     # `download_dir` must stay a real path string; coercing a
                     # number here would crash os.path.join downstream.
-                    if k == "download_dir" and not isinstance(v, str):
-                        continue
+                    if k == "download_dir":
+                        if not isinstance(v, str):
+                            continue
+                        # Store the trimmed value; "" means "use the default"
+                        # and is resolved by Engine.download_root().
+                        v = v.strip()
                     ENGINE.settings[k] = v
                 ENGINE.save_state()
             return self._send(200, {"settings": ENGINE.settings})

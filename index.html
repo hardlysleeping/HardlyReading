@@ -231,7 +231,13 @@
   .tab{background:transparent;border:0;color:var(--dim);padding:9px 16px;
     border-radius:9px;font-weight:600;font-size:14px}
   .tab.on{background:var(--panel);color:var(--text);border:1px solid var(--line)}
-  .pager{display:flex;gap:8px;align-items:center;justify-content:center;margin-top:14px}
+  .pager{display:flex;gap:8px;align-items:center;justify-content:center;margin-top:14px;
+    flex-wrap:wrap}
+  .pager .plabel{font-size:12.5px;color:var(--dim);white-space:nowrap}
+  .pager .sp{flex:1}
+  .pager select{background:var(--panel2);border:1px solid var(--line);
+    color:var(--text);border-radius:6px;padding:4px 6px;font-size:12.5px}
+  .pager label{font-size:12.5px;color:var(--dim);display:flex;gap:6px;align-items:center}
   .pager button{background:var(--panel2);border:1px solid var(--line);color:var(--text);
     border-radius:8px;width:34px;height:32px}
   .pager button:disabled{opacity:.35}
@@ -264,6 +270,13 @@
     font-size:11px;line-height:1;padding:4px 6px;border-radius:5px;cursor:pointer}
   .reorder button:hover:not(:disabled){color:var(--text);border-color:var(--accent)}
   .reorder button:disabled{opacity:.28;cursor:default}
+  /* Support button: a real button, because the app is unusable without them.
+     Kept off the primary accent so it reads as support, not as the next step. */
+  .support{display:flex;align-items:center;gap:12px;margin-top:12px;flex-wrap:wrap}
+  .support-btn{text-decoration:none;background:rgba(124,108,255,.12);
+    border:1px solid rgba(124,108,255,.45);color:var(--text)}
+  .support-btn:hover{background:rgba(124,108,255,.22);border-color:var(--accent);
+    color:#fff;text-decoration:none}
   .pdfhost{flex:1;overflow:auto;background:#0b0d11;display:flex;
     justify-content:center;align-items:flex-start;padding:12px}
   .pdfhost canvas{box-shadow:0 4px 24px rgba(0,0,0,.5);background:#fff}
@@ -292,6 +305,10 @@
   .rfile.done{opacity:.62}
   .rfile.done:hover{opacity:1}
   .rfile .pg{font-size:12px;color:var(--dim);white-space:nowrap}
+  .rfile.pending{border-style:dashed}
+  .pendstate{font-size:11.5px;color:#f0b429}
+  .rfile .btn.sm{padding:5px 10px}
+  .rfile a.btn{text-decoration:none;display:inline-block}
   .rfile.dis{opacity:.45;cursor:default}
   .rfile.dis:hover{border-color:var(--line)}
   .rfile.sel{border-color:var(--accent);background:rgba(79,140,255,.08)}
@@ -403,11 +420,17 @@ https://archive.org/search?query=…"></textarea>
         <button class="btn ghost" id="pauseBtn">Pause</button>
       </div>
       <div class="hint">A <code>/details/</code> link is grabbed in full. Collection links pull every member.</div>
+      <div class="support">
+        <a class="btn support-btn" href="https://archive.org/donate"
+           target="_blank" rel="noopener">Support the Internet Archive</a>
+        <span class="hint" style="margin:0">Every scan comes from them. Nothing here works without them.</span>
+      </div>
     </div>
 
     <div class="card">
       <h2>Queue</h2>
       <div id="jobs"><div class="empty"><b>Nothing queued yet</b><span>Paste a link above to start.</span></div></div>
+      <div id="queuePager"></div>
     </div>
   </div>
 
@@ -425,6 +448,11 @@ https://archive.org/search?query=…"></textarea>
         <button class="chipf" data-f="bundle">Multi-issue listings</button>
       </div>
       <div id="searchMeta" class="hint"></div>
+      <div class="support">
+        <a class="btn support-btn" href="https://archive.org/donate"
+           target="_blank" rel="noopener">Support the Internet Archive</a>
+        <span class="hint" style="margin:0">Results are served by them — donate to keep it online.</span>
+      </div>
       <div class="row" id="addAllRow" style="display:none">
         <button class="btn" id="addAllBtn">Add all results to queue</button>
         <span class="hint" style="margin:0" id="addAllHint"></span>
@@ -437,9 +465,12 @@ https://archive.org/search?query=…"></textarea>
       </div>
       <div class="results" id="results"></div>
       <div class="pager" id="pager" style="display:none">
-        <button id="prev">‹</button>
-        <span id="pageLabel"></span>
-        <button id="next">›</button>
+        <button id="prev" title="Previous page">‹</button>
+        <span class="plabel" id="pageLabel"></span>
+        <button id="next" title="Next page">›</button>
+        <span class="sp"></span>
+        <label>show <select id="searchSize"></select></label>
+        <select id="searchJump" title="Jump to page"></select>
       </div>
     </div>
   </div>
@@ -462,6 +493,7 @@ https://archive.org/search?query=…"></textarea>
       </div>
       <div id="libMeta" class="hint"></div>
       <div id="libList"></div>
+      <div id="libPager"></div>
     </div>
   </div>
 </div>
@@ -523,20 +555,117 @@ const STATUS_LABEL = {
   done:"Done", failed:"Failed", cancelled:"Cancelled"
 };
 
-function renderJobs(st){
-  const host = $("jobs");
-  // Waiting work is shown in run order (that is what the queue means); finished
-  // work follows, newest first, because its run order is history, not a plan.
-  const WAITING = new Set(["planned","queued","resume","resolving","downloading","verifying"]);
-  const all = st.jobs || [];
-  const jobs = all.filter(j=>WAITING.has(j.status))
-                  .concat(all.filter(j=>!WAITING.has(j.status)).slice().reverse());
-  const waitCount = all.filter(j=>WAITING.has(j.status)).length;
-  if(!jobs.length){
-    host.innerHTML = '<div class="empty"><b>Nothing queued yet</b><span>Paste a link above to start.</span></div>';
+/* ---------- paging ----------
+   One pager for the queue, the library and search. Client-side for the first
+   two because the whole list is already in memory; search pages on the server
+   because numFound can be tens of thousands.
+
+   Sizes are remembered per tab in localStorage, so the queue stays at 10 while
+   search stays at 50 if that is how you left them. */
+const PAGE_SIZES = [10, 25, 50, 100];
+
+function pageSize(key, fallback){
+  const n = parseInt(localStorage.getItem("hr.page." + key) || "", 10);
+  return PAGE_SIZES.includes(n) ? n : fallback;
+}
+function setPageSize(key, n){
+  localStorage.setItem("hr.page." + key, String(n));
+}
+
+function pagerBar(key, total, noun){
+  const ui = listUI[key];
+  const pages = Math.max(1, Math.ceil(total / ui.size));
+  if(ui.page > pages - 1) ui.page = pages - 1;   // a filter can strand the page
+  if(ui.page < 0) ui.page = 0;
+  const from = total ? ui.page * ui.size + 1 : 0;
+  const to = Math.min(total, (ui.page + 1) * ui.size);
+  const sizes = PAGE_SIZES.map(n =>
+    `<option value="${n}"${n === ui.size ? " selected" : ""}>${n}</option>`).join("");
+  // Jumping is only worth a control when there is more than one page.
+  const jump = pages > 1
+    ? `<select data-pjump="${key}" title="Jump to page">` +
+      Array.from({length: pages}, (_, i) =>
+        `<option value="${i}"${i === ui.page ? " selected" : ""}>page ${i + 1}</option>`
+      ).join("") + `</select>`
+    : "";
+  return `<div class="pager">
+    <button data-ppage="${key}" data-dir="-1" title="Previous page"
+      ${ui.page <= 0 ? "disabled" : ""}>‹</button>
+    <span class="plabel">${total ? `showing ${from}–${to} of ${total} ${noun}` : `0 ${noun}`}` +
+      `${pages > 1 ? ` · page ${ui.page + 1}/${pages}` : ""}</span>
+    <button data-ppage="${key}" data-dir="1" title="Next page"
+      ${ui.page >= pages - 1 ? "disabled" : ""}>›</button>
+    <span class="sp"></span>
+    <label>show <select data-psize="${key}">${sizes}</select></label>
+    ${jump}
+  </div>`;
+}
+
+const listUI = {
+  queue:   {page: 0, size: pageSize("queue", 10)},
+  library: {page: 0, size: pageSize("library", 10)},
+};
+
+/* Delegated once: the lists are rebuilt on every poll, so per-control
+   handlers would be thrown away 1.2 s after being attached. */
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("[data-ppage]");
+  if(!b) return;
+  const key = b.dataset.ppage, dir = parseInt(b.dataset.dir, 10);
+  const total = key === "queue" ? queueRows().length : libRows.length;
+  const pages = Math.max(1, Math.ceil(total / listUI[key].size));
+  listUI[key].page = Math.max(0, Math.min(pages - 1, listUI[key].page + dir));
+  key === "queue" ? renderJobs(lastState || {}) : renderLibrary();
+});
+
+document.addEventListener("change", (e) => {
+  const sz = e.target.closest("[data-psize]");
+  if(sz){
+    const key = sz.dataset.psize;
+    listUI[key].size = parseInt(sz.value, 10);
+    setPageSize(key, listUI[key].size);
+    listUI[key].page = 0;
+    key === "queue" ? renderJobs(lastState || {}) : renderLibrary();
     return;
   }
-  const html = jobs.map((j, i)=>{
+  const jp = e.target.closest("[data-pjump]");
+  if(jp){
+    const key = jp.dataset.pjump;
+    listUI[key].page = parseInt(jp.value, 10) || 0;
+    key === "queue" ? renderJobs(lastState || {}) : renderLibrary();
+  }
+});
+
+const WAITING = new Set(["planned","queued","resume","resolving","downloading","verifying"]);
+
+// Waiting work is shown in run order (that is what the queue means); finished
+// work follows, newest first, because its run order is history, not a plan.
+function queueRows(){
+  const all = (lastState && lastState.jobs) || [];
+  return all.filter(j=>WAITING.has(j.status))
+            .concat(all.filter(j=>!WAITING.has(j.status)).slice().reverse());
+}
+
+function renderJobs(st){
+  const host = $("jobs");
+  const jobs = queueRows();
+  const waitCount = jobs.filter(j=>WAITING.has(j.status)).length;
+  if(!jobs.length){
+    host.innerHTML = '<div class="empty"><b>Nothing queued yet</b><span>Paste a link above to start.</span></div>';
+    if($("queuePager")) $("queuePager").innerHTML = "";
+    return;
+  }
+  // Page over the whole queue, then number the rows by their real position so
+  // "move to top" still means the same thing on page 3.
+  const ui = listUI.queue;
+  const pages = Math.max(1, Math.ceil(jobs.length / ui.size));
+  if(ui.page > pages - 1) ui.page = pages - 1;
+  if(ui.page < 0) ui.page = 0;
+  const startAt = ui.page * ui.size;
+  const slice = jobs.slice(startAt, startAt + ui.size);
+
+  const html = slice.map((j, n)=>{
+    const i = startAt + n;                 // position in the full list
     const pct = j.total_bytes ? Math.min(100, (j.done_bytes/j.total_bytes)*100) : 0;
     const bits = [];
     if(j.n_items) bits.push(`${j.n_items} item${j.n_items===1?"":"s"}`);
@@ -612,11 +741,37 @@ function renderJobs(st){
     </div>`;
   }).join("");
   host.innerHTML = html;
+  if($("queuePager")) $("queuePager").innerHTML = pagerBar("queue", jobs.length, "jobs");
 }
 
 /* Job card actions are delegated: the list is re-rendered on every poll, so a
    per-button handler would be destroyed 1.2s after it is attached. */
 document.addEventListener("click", async (e)=>{
+  // Library rows for items that are not on disk yet: fetch, or retry.
+  const dl = e.target.closest("[data-dl]");
+  if(dl){
+    dl.disabled = true;
+    try{
+      await api("/api/confirm", {method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({id: dl.dataset.dl})});
+      toast("Downloading");
+      await loadLibrary();
+    }catch(err){ toast(err.message); dl.disabled = false; }
+    return;
+  }
+  const rt = e.target.closest("[data-retry]");
+  if(rt){
+    rt.disabled = true;
+    try{
+      await api("/api/retry", {method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({id: rt.dataset.retry})});
+      await loadLibrary();
+    }catch(err){ toast(err.message); rt.disabled = false; }
+    return;
+  }
+
   const mv = e.target.closest("[data-move]");
   if(mv){
     const id = mv.dataset.id, how = mv.dataset.move;
@@ -797,6 +952,9 @@ $("pauseBtn").onclick = async ()=>{
 
 /* ---------- search ---------- */
 let searchPage = 1, searchQ = "", searchFilter = "all", lastResult = null;
+// Search pages on the server (numFound can be tens of thousands), so its size
+// travels with the request instead of slicing an array we already hold.
+let searchSize = pageSize("search", 25);
 
 async function doSearch(){
   const q = $("q").value.trim();
@@ -817,7 +975,8 @@ async function loadPage(){
   }
   $("searchMeta").innerHTML = '<span class="spin"></span>Searching Internet Archive…';
   try{
-    const params = new URLSearchParams({q: searchQ, page: String(searchPage)});
+    const params = new URLSearchParams({q: searchQ, page: String(searchPage),
+                                        rows: String(searchSize)});
     params.set("filter", searchFilter);
 
     const r = await api("/api/search?" + params.toString());
@@ -839,11 +998,34 @@ async function loadPage(){
       await refreshCovered();
       renderCards(r.docs);
     }
-    const pages = Math.max(1, Math.ceil(r.numFound/24));
-    $("pager").style.display = pages>1 ? "" : "none";
-    $("pageLabel").textContent = `Page ${searchPage} of ${pages}`;
-    $("prev").disabled = searchPage<=1;
-    $("next").disabled = searchPage>=pages;
+    const per = r.rows || searchSize;
+    const pages = Math.max(1, Math.ceil(r.numFound / per));
+    if(searchPage > pages) searchPage = pages;
+    const from = r.numFound ? (searchPage - 1) * per + 1 : 0;
+    const to = Math.min(r.numFound, searchPage * per);
+    $("pager").style.display = r.numFound ? "" : "none";
+    $("pageLabel").textContent =
+      `showing ${from}–${to} of ${r.numFound.toLocaleString()}` +
+      (pages > 1 ? ` · page ${searchPage}/${pages}` : "");
+    $("prev").disabled = searchPage <= 1;
+    $("next").disabled = searchPage >= pages;
+    // Size and jump controls: built once, updated in place, so the poll and a
+    // re-search do not rebuild the thing under the cursor.
+    const sz = $("searchSize"), jp = $("searchJump");
+    if(sz){
+      if(sz.options.length !== PAGE_SIZES.length){
+        sz.innerHTML = PAGE_SIZES.map(n=>`<option value="${n}">${n}</option>`).join("");
+      }
+      sz.value = String(per);
+    }
+    if(jp){
+      if(jp.options.length !== pages){
+        jp.innerHTML = Array.from({length: pages}, (_, i) =>
+          `<option value="${i+1}">page ${i+1}</option>`).join("");
+      }
+      jp.value = String(searchPage);
+      jp.style.display = pages > 1 ? "" : "none";
+    }
 
     // "Add all" only makes sense for a real result set
     const row = $("addAllRow");
@@ -1068,6 +1250,16 @@ $("searchBtn").onclick = doSearch;
 $("q").onkeydown = e=>{ if(e.key==="Enter") doSearch(); };
 $("prev").onclick = ()=>{ if(searchPage>1){ searchPage--; loadPage(); } };
 $("next").onclick = ()=>{ searchPage++; loadPage(); };
+$("searchSize").onchange = (e)=>{
+  searchSize = parseInt(e.target.value, 10) || 25;
+  setPageSize("search", searchSize);
+  searchPage = 1;
+  loadPage();
+};
+$("searchJump").onchange = (e)=>{
+  searchPage = parseInt(e.target.value, 10) || 1;
+  loadPage();
+};
 
 /* filter chips */
 document.querySelectorAll(".chipf").forEach(c=>{
@@ -1096,63 +1288,61 @@ async function loadLibrary(){
 let libSelectMode = false;
 const libSelected = new Set();   // keys of rows ticked in select mode
 
+let libRows = [];   // the filtered list the pager counts
+
 function renderLibrary(){
   const q = ($("libQ").value || "").trim().toLowerCase();
   const shown = q
-    ? libItems.filter(i => (i.series + " " + i.name).toLowerCase().includes(q))
+    ? libItems.filter(i => ((i.series||"") + " " + (i.name||"")).toLowerCase().includes(q))
     : libItems;
+  libRows = shown;
 
   $("libSelBtn").textContent = libSelectMode ? "Done" : "Select";
   $("libSelBar").hidden = !libSelectMode;
 
-  if(!libItems.length){
-    $("libMeta").textContent = "";
+  // The warning is about "nothing is on disk": pending rows do not contradict
+  // that, so they must not silence it.
+  const nothingOnDisk = libItems.every(i => !i.downloaded);
+  if(!libItems.length || (libDir.missing && nothingOnDisk)){
+    $("libMeta").textContent = libItems.length ? `${libItems.length} known, none downloaded` : "";
     // Say which folder is being watched, and shout when it is not there: an
     // empty library and a missing folder are different problems.
     $("libList").innerHTML = libDir.missing
       ? `<div class="empty"><b>Download folder not found</b><span>${esc(libDir.dir)} does not exist. Downloads create it; or point Settings at the folder your files are in.</span></div>`
       : `<div class="empty"><b>Nothing downloaded yet</b><span>Anything you finish shows up here — try the Search tab.</span></div>`;
+    if($("libPager")) $("libPager").innerHTML = "";
     return;
   }
+
   const doneCount = libItems.filter(i => i.finished).length;
+  const pending = libItems.filter(i => !i.downloaded).length;
   $("libMeta").textContent =
     `${libItems.length} file${libItems.length===1?"":"s"} · ${doneCount} finished` +
+    (pending ? ` · ${pending} not downloaded` : "") +
     (q ? ` · ${shown.length} match` : "");
 
-  // Group by series so a long run reads as one block.
+  const ui = listUI.library;
+  const pages = Math.max(1, Math.ceil(shown.length / ui.size));
+  if(ui.page > pages - 1) ui.page = pages - 1;
+  if(ui.page < 0) ui.page = 0;
+  const startAt = ui.page * ui.size;
+  const slice = shown.slice(startAt, startAt + ui.size);
+
+  // Group by series, but only within the visible page, so a page never splits
+  // a series header away from every row under it.
   const groups = {};
-  for(const it of shown){ (groups[it.series] = groups[it.series] || []).push(it); }
+  for(const it of slice){ (groups[it.series] = groups[it.series] || []).push(it); }
 
   $("libList").innerHTML = Object.keys(groups).sort().map(se => `
     <div class="libgroup">${esc(se)}</div>
-    ${groups[se].map(it => {
-      const pct = it.pages ? Math.min(100, Math.round(((it.progress||0) / it.pages) * 100)) : 0;
-      const badge = it.finished
-        ? '<span class="libfin">finished</span>'
-        : (it.progress ? `<span class="libpg">${it.progress}/${it.pages} · ${pct}%</span>` : "");
-      // Progress bar only once you've started reading, so unread rows stay quiet.
-      const bar = (it.progress && it.pages)
-        ? `<div class="rltrack"><i class="${it.finished?"fin":""}" style="width:${pct}%"></i></div>`
-        : "";
-      const on = libSelected.has(it.key) ? " sel" : "";
-      // Deleting is a deliberate act: only offered once Select is on.
-      const tick = libSelectMode ? `<span class="libtick${on ? " on" : ""}">✓</span>` : "";
-      const fin = it.finished ? " done" : "";
-      return `<div class="rfile${it.readable?"":" dis"}${on}${fin}" data-key="${esc(it.key)}"
-                   data-job="${esc(it.job)}" data-name="${esc(it.name)}">
-        ${tick}
-        <div class="rlinfo">
-          <span class="nm">${esc(it.name)}</span>
-          ${bar}
-        </div>
-        ${badge}
-        <span class="pg">${it.kind === "cbz" ? it.pages + " pages" : "PDF"}</span>
-      </div>`;
-    }).join("")}
+    ${groups[se].map(it => rowHtml(it)).join("")}
   `).join("");
 
+  if($("libPager")) $("libPager").innerHTML = pagerBar("library", shown.length, "files");
+
   $("libList").querySelectorAll(".rfile").forEach(el => {
-    el.onclick = () => {
+    el.onclick = (ev) => {
+      if(ev.target.closest("button, a")) return;   // row actions handle themselves
       if(libSelectMode){
         const k = el.dataset.key;
         if(libSelected.has(k)) libSelected.delete(k); else libSelected.add(k);
@@ -1161,10 +1351,74 @@ function renderLibrary(){
       }
       if(el.classList.contains("dis")) return;
       const it = libItems.find(x => x.key === el.dataset.key);
-      if(it) openBook(it);
+      if(it && it.downloaded) openBook(it);
     };
   });
   updateLibSelBar();
+}
+
+function rowHtml(it){
+  const pct = it.pages ? Math.min(100, Math.round(((it.progress||0) / it.pages) * 100)) : 0;
+  const on = libSelected.has(it.key) ? " sel" : "";
+  // Deleting is a deliberate act: only offered once Select is on — and never
+  // for a row with no file behind it, where Delete can only fail.
+  const tick = (libSelectMode && it.downloaded && !it.partial)
+    ? `<span class="libtick${on ? " on" : ""}">✓</span>` : "";
+
+  if(!it.downloaded || it.partial) return pendingRowHtml(it, on, tick, !!it.downloaded);
+
+  const badge = it.finished
+    ? '<span class="libfin">finished</span>'
+    : (it.progress ? `<span class="libpg">${it.progress}/${it.pages} · ${pct}%</span>` : "");
+  // Progress bar only once you've started reading, so unread rows stay quiet.
+  const bar = (it.progress && it.pages)
+    ? `<div class="rltrack"><i class="${it.finished?"fin":""}" style="width:${pct}%"></i></div>`
+    : "";
+  const fin = it.finished ? " done" : "";
+  return `<div class="rfile${it.readable?"":" dis"}${on}${fin}" data-key="${esc(it.key)}"
+               data-job="${esc(it.job)}" data-name="${esc(it.name)}">
+    ${tick}
+    <div class="rlinfo">
+      <span class="nm">${esc(it.name)}</span>
+      ${bar}
+    </div>
+    ${badge}
+    <span class="pg">${it.kind === "cbz" ? it.pages + " pages" : "PDF"}</span>
+  </div>`;
+}
+
+/* An item the queue knows about but which is not on disk. It still belongs in
+   the Library — that is where you look for a title — so it carries its state
+   and, where it makes sense, the action that moves it forward. */
+function pendingRowHtml(it, on, tick, exists){
+  const label = {planned:"ready to download", queued:"queued",
+                 resume:"resuming", resolving:"resolving",
+                 downloading:"downloading", verifying:"verifying",
+                 failed:"failed"}[it.status] || it.status;
+  // A partial file exists but cannot be read yet; say "downloading", not
+  // "not downloaded", and never offer the reader.
+  const state = exists ? `part-downloaded` : "not downloaded";
+  let act = "";
+  if(it.status === "planned"){
+    act = `<button class="btn sm" data-dl="${esc(it.job)}">Download</button>`;
+  }else if(it.status === "failed"){
+    act = `<button class="btn sm" data-retry="${esc(it.job)}">Retry</button>`;
+  }
+  // Reading without downloading: the item page on archive.org has the built-in
+  // viewer, so a PDF can be looked at now and fetched later.
+  const open = it.item_url
+    ? `<a class="btn ghost sm" href="${esc(it.item_url)}" target="_blank"
+          rel="noopener" title="Open on archive.org without downloading">Open</a>` : "";
+  return `<div class="rfile pending${on}" data-key="${esc(it.key)}"
+               data-job="${esc(it.job)}" data-name="${esc(it.name)}">
+    ${tick}
+    <div class="rlinfo">
+      <span class="nm">${esc(it.name || it.series)}</span>
+      <span class="pendstate">${esc(state)}</span>
+    </div>
+    ${act}${open}
+    <span class="pg">${esc(label)}</span>
+  </div>`;
 }
 
 function updateLibSelBar(){
@@ -1272,6 +1526,10 @@ function hideReader(){
   // handle lets pdf.js release the worker for the next file.
   if(pdfKeys) document.removeEventListener("keydown", pdfKeys);
   pdfKeys = null;
+  if(pdfZoomKeys) document.removeEventListener("keydown", pdfZoomKeys);
+  pdfZoomKeys = null;
+  if(pdfResize) window.removeEventListener("resize", pdfResize);
+  pdfResize = null;
   if(pdfState && pdfState.doc) { try { pdfState.doc.destroy(); } catch(e){} }
   pdfState = null;
   readerState = null;
@@ -1281,7 +1539,9 @@ function hideReader(){
 // width, arrows to turn. Its job is a preview plus an honest page position,
 // not a full document experience.
 let pdfState = null;
-let pdfKeys = null;
+let pdfKeys = null;      // page turning
+let pdfZoomKeys = null;  // - / + / 0
+let pdfResize = null;    // window resize redraw
 
 async function openPdf(item, wrap, qs){
   wrap.innerHTML = `
@@ -1399,19 +1659,23 @@ async function openPdf(item, wrap, qs){
   $("rzoomin").onclick  = ()=> pdfZoom(state.zoom * 1.25);
   $("rzoomout").onclick = ()=> pdfZoom(state.zoom / 1.25);
   $("rzoomfit").onclick = ()=> pdfZoom(1);
-  // Keyboard zoom for PDFs too: pdfKeys only knows about pages.
-  document.addEventListener("keydown", (e)=>{
-    if(!pdfState) return;
+  // Keyboard zoom for PDFs too: pdfKeys only knows about pages. Held in a
+  // named reference so hideReader can detach it — an anonymous listener stayed
+  // bound and, after a second PDF, one key press drove both viewers.
+  pdfZoomKeys = (e)=>{
+    if(!pdfState || pdfState !== state) return;
     if(e.key === "+" || e.key === "=") { e.preventDefault(); pdfZoom(state.zoom * 1.25); }
     else if(e.key === "-" || e.key === "_") { e.preventDefault(); pdfZoom(state.zoom / 1.25); }
     else if(e.key === "0") { e.preventDefault(); pdfZoom(1); }
-  });
+  };
+  document.addEventListener("keydown", pdfZoomKeys);
 
   // Redraw at the new width; debounced so a drag does not queue renders.
+  // "remove" is not a DOM event, so the old cleanup never ran and every PDF
+  // left a resize listener behind. hideReader detaches this one.
   let rz = null;
-  const onResize = ()=>{ clearTimeout(rz); rz = setTimeout(draw, 150); };
-  window.addEventListener("resize", onResize);
-  wrap.addEventListener("remove", ()=> window.removeEventListener("resize", onResize));
+  pdfResize = ()=>{ clearTimeout(rz); rz = setTimeout(draw, 150); };
+  window.addEventListener("resize", pdfResize);
 
   draw();
 }

@@ -19,6 +19,7 @@ Stdlib only. Runs on Windows / Linux / macOS.
 """
 import json
 import hashlib
+import html
 import os
 import re
 import shutil
@@ -275,6 +276,26 @@ def scope_query(query: str, mediatype: str = "texts") -> str:
     return q
 
 
+def plain_text(value, limit: int = 400) -> str:
+    """Archive.org descriptions are HTML, sometimes a list, often with tags.
+
+    Reduce to readable prose for a card: strip tags, collapse whitespace, cut
+    at a word boundary. The UI renders it as text, never as HTML.
+    """
+    if isinstance(value, list):
+        value = " ".join(str(v) for v in value if v)
+    if not value:
+        return ""
+    text = re.sub(r"<[^>]+>", " ", str(value))
+    text = html.unescape(text)
+    text = re.sub(r"\s+", " ", text)
+    text = re.sub(r"\s+", " ", text).strip()
+    if len(text) > limit:
+        cut = text[:limit].rsplit(" ", 1)[0]
+        return cut + "…"
+    return text
+
+
 def search_page(query: str, rows: int = 24, page: int = 1,
                 mediatype: str = "texts", sort: str = "downloads desc",
                 title_only: bool = True, collections_only: bool = False):
@@ -298,7 +319,7 @@ def search_page(query: str, rows: int = 24, page: int = 1,
               ("output", "json"),
               ("fl[]", "identifier"), ("fl[]", "title"), ("fl[]", "year"),
               ("fl[]", "mediatype"), ("fl[]", "downloads"),
-              ("fl[]", "creator")]
+              ("fl[]", "creator"), ("fl[]", "description")]
     if sort:
         params.append(("sort[]", sort))
     url = SEARCH_API + "?" + urllib.parse.urlencode(params)
@@ -318,6 +339,7 @@ def search_page(query: str, rows: int = 24, page: int = 1,
             "downloads": d.get("downloads"),
             "creator": d.get("creator") if isinstance(d.get("creator"), str)
                        else (d.get("creator") or [""])[0],
+            "desc": plain_text(d.get("description")),
             "thumb": f"https://archive.org/services/img/{d.get('identifier')}",
         } for d in docs],
     }
@@ -753,6 +775,16 @@ class Engine:
         self.kick()
         return job.summary()
 
+    def download_root(self) -> str:
+        """The folder downloads land in, with the setting's empty value resolved.
+
+        An empty or whitespace setting means "the default". Without this, the
+        join below silently means the process working directory — which on a
+        launcher means files appear inside the app folder.
+        """
+        d = (self.settings.get("download_dir") or "").strip()
+        return d or default_download_dir()
+
     def get(self, job_id):
         for j in self.jobs:
             if j.id == job_id:
@@ -1000,7 +1032,7 @@ class Engine:
             # archive's own checksum rather than by filename. Renaming a file
             # or re-downloading a collection under a new label must not fetch
             # the same bytes twice. Entries with no md5 are always kept.
-            job.dir = os.path.join(self.settings["download_dir"],
+            job.dir = os.path.join(self.download_root(),
                                    safe_name(job.series or job.label))
             if self.settings.get("skip_existing", True) and job.dir:
                 have = md5_index(job.dir)
@@ -1069,7 +1101,7 @@ class Engine:
         aria = aria2c_path()
         # The folder is the Komga SERIES, not the raw job label, so a series
         # pulled in two passes lands in one folder instead of two.
-        dest = os.path.join(self.settings["download_dir"],
+        dest = os.path.join(self.download_root(),
                             safe_name(job.series or job.label))
         os.makedirs(dest, exist_ok=True)
         job.dir = dest
