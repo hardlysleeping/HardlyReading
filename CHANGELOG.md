@@ -3,6 +3,24 @@
 Notable changes to HardlyReading. Versions are tagged on GitHub with matching
 release notes.
 
+## [2.0.0] — 2026-10-20
+
+### Added
+
+- **Covers.** Search results already had them; queue cards now show the item's
+  cover from archive.org, and library rows show page one of the file, scaled to
+  96 px by Pillow and cached under the config directory. A page of ten full-size
+  scans would be tens of megabytes; a cached thumbnail costs a few kB.
+- **Descriptions in search results**, clamped to two lines and expanded in place
+  on click — the click expands the text instead of toggling the selection.
+- **Expandable queue cards.** Clicking a card lists the files inside the job.
+  The list is fetched when you open it (`/api/job`), not with the 1.2 s poll, and
+  the card stays open across repaints.
+
+### Changed
+
+- Screenshots re-shot against the current UI.
+
 ## [1.9.0] — 2026-10-20
 
 ### Added
@@ -206,6 +224,7 @@ First release.
 - Built-in CBZ / CBR / PDF reader; CBR needs `unrar`, `bsdtar` or `7z`
 - Cross-platform launcher that finds `aria2c` and opens the browser
 
+[2.0.0]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.0.0
 [1.9.0]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v1.9.0
 [1.8.0]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v1.8.0
 [1.7.0]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v1.7.0

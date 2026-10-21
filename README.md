@@ -174,7 +174,21 @@ What that does and does not buy you, plainly:
 - Install prompts need `https://` or `localhost`. On a plain-HTTP LAN address the
   page still works, it just will not offer to install.
 
-### The queue is a real queue: you control the order
+### The library also shows what you have not downloaded yet
+
+A title the queue knows about but which is not on disk still appears, marked
+`not downloaded`, with the action that moves it forward — **Download** for
+planned work, **Retry** for failed work — and a link to its page on archive.org
+where the built-in viewer can show it without downloading anything.
+
+Files caught mid-download are marked partial and refuse to open: a half-written
+archive is not a book. Rows with no file behind them cannot be selected for
+deletion, because there is nothing to delete.
+
+Library rows carry a real cover — page one, scaled to 96 px and cached — so the
+shelf looks like a shelf. PDFs get a placeholder rather than a rendered cover.
+
+## The queue is a real queue: you control the order
 
 Adding a link starts it straight away; when a job finishes the next one starts
 on its own, with a pause between jobs set by **Pause between jobs** in Settings
@@ -195,7 +209,23 @@ Library, tick the files you want gone, then **Delete** — it confirms with the
 list of filenames before touching disk. Press **Cancel** or **Done** to leave
 select mode without deleting anything.
 
-### The library reads the folder, not just the queue
+### Paging, covers and descriptions
+
+Every list pages at **10 / 25 / 50 / 100** per page, with prev/next and a
+jump-to-page list; the size you pick is remembered per tab. The queue and the
+library page locally, search pages on the server because a search can match tens
+of thousands of items.
+
+Search results carry the archive.org description, cut to two lines — click it to
+read the whole thing. That click expands the text rather than toggling the card,
+so you cannot lose a selection by trying to read it.
+
+Queue cards show the item's cover and expand on click to list the files inside
+the job. The list is fetched when you open the card, not with the 1.2 s poll, so
+a collection of 400 issues costs nothing until you ask for it. A card you opened
+stays open.
+
+## The library reads the folder, not just the queue
 
 The Library lists what is actually in your **download folder** — the one set in
 Settings, default `~/Documents/HardlyReading`, including its series subfolders.
