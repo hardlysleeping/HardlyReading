@@ -283,6 +283,24 @@
   .rbar button{background:var(--panel2);border:1px solid var(--line);
     color:var(--text);border-radius:7px;padding:6px 12px;font-size:13px}
   .rbar button:disabled{opacity:.35}
+  /* Sections: the queue answers "what is happening", which one flat list did
+     not. The header is quiet so it organises rather than shouts. */
+  .qsec{display:flex;align-items:center;gap:9px;margin:16px 0 8px;
+    padding-bottom:6px;border-bottom:1px solid var(--line)}
+  .qsec:first-child{margin-top:4px}
+  .qsec-t{font-size:11px;letter-spacing:.09em;text-transform:uppercase;
+    font-weight:700;color:var(--text)}
+  .qsec-n{font-size:10.5px;color:var(--dim);border:1px solid var(--line);
+    border-radius:999px;padding:1px 7px}
+  .qsec-h{font-size:11px;color:var(--dim);margin-left:auto}
+  /* In-flight files. Thin bars, because a dozen of them must not shout. */
+  .qlive{margin-top:9px;display:flex;flex-direction:column;gap:4px}
+  .ql{display:flex;align-items:center;gap:8px;font-size:11px;color:var(--dim)}
+  .qlbar{flex:1;height:6px;border-radius:3px;background:var(--line);overflow:hidden}
+  .qlbar i{display:block;height:100%;background:var(--accent2);border-radius:2px}
+  .qlpct{width:32px;text-align:right;color:var(--text)}
+  .qlsz{width:118px;text-align:right;font-variant-numeric:tabular-nums}
+  .qlsp{width:70px;text-align:right;font-variant-numeric:tabular-nums}
   .jitems{margin-top:10px;border-top:1px solid var(--line);padding-top:8px;
     display:flex;flex-direction:column;gap:3px;max-height:260px;overflow:auto}
   .ji{display:flex;gap:10px;align-items:baseline;font-size:12px;color:var(--dim)}
@@ -740,11 +758,40 @@ const WAITING = new Set(["planned","queued","resume","resolving","downloading","
 
 // Waiting work is shown in run order (that is what the queue means); finished
 // work follows, newest first, because its run order is history, not a plan.
-function queueRows(){
-  const all = (lastState && lastState.jobs) || [];
-  return all.filter(j=>WAITING.has(j.status))
-            .concat(all.filter(j=>!WAITING.has(j.status)).slice().reverse());
+// Jobs grouped the way they are actually read: what is happening now, what
+// needs a decision, what is waiting, and what is history.
+const RUNNING = new Set(["downloading", "verifying", "resolving"]);
+
+function queueRows(st){
+  // Callers pass a partial state (an empty object on first paint), so fall back
+  // to the last full snapshot rather than rendering an empty queue.
+  const src = (st && st.jobs) ? st : (lastState || {});
+  const all = src.jobs || [];
+  // Four disjoint buckets. WAITING already contains the running states, so each
+  // job is claimed by exactly one bucket — concat-ing overlapping filters
+  // rendered the same card twice.
+  const running = all.filter(j => RUNNING.has(j.status));
+  const failed  = all.filter(j => j.status === "failed");
+  const waiting = all.filter(j => WAITING.has(j.status) && !RUNNING.has(j.status));
+  const done    = all.filter(j => !RUNNING.has(j.status) &&
+                                  j.status !== "failed" &&
+                                  !WAITING.has(j.status)).reverse();
+  return running.concat(failed, waiting, done);
 }
+
+function queueSection(status){
+  if(RUNNING.has(status)) return "running";
+  if(status === "failed") return "failed";
+  if(WAITING.has(status)) return "waiting";
+  return "done";
+}
+
+const SECTION_TITLE = {
+  running: ["Downloading now", "working on these right now"],
+  failed:  ["Needs attention", "these stopped and can be retried"],
+  waiting: ["Waiting", "in the order they will run"],
+  done:    ["Finished", "newest first"],
+};
 
 function jobItemsHtml(id){
   const d = jobItems[id];
@@ -772,7 +819,7 @@ async function loadJobItems(id){
 
 function renderJobs(st){
   const host = $("jobs");
-  const jobs = queueRows();
+  const jobs = queueRows(st);
   const waitCount = jobs.filter(j=>WAITING.has(j.status)).length;
   if(!jobs.length){
     host.innerHTML = '<div class="empty"><b>Nothing queued yet</b><span>Paste a link above to start.</span></div>';
@@ -788,19 +835,27 @@ function renderJobs(st){
   const startAt = ui.page * ui.size;
   const slice = jobs.slice(startAt, startAt + ui.size);
 
+  let lastSection = "";
   const html = slice.map((j, n)=>{
     const i = startAt + n;                 // position in the full list
     const pct = j.total_bytes ? Math.min(100, (j.done_bytes/j.total_bytes)*100) : 0;
+    // "Done" with every item skipped means nothing arrived: say so rather than
+    // showing a green pill over an empty folder.
+    const empty = j.status === "done" && (j.n_items||0) > 0 &&
+                  (j.n_disk || 0) === 0;
     const bits = [];
     if(j.n_items) bits.push(`${j.n_items} item${j.n_items===1?"":"s"}`);
     if(j.total_bytes) bits.push(fmtBytes(j.total_bytes));
     if(j.skipped) bits.push(`${j.skipped} duplicate${j.skipped===1?"":"s"} skipped`);
+    if(j.speed && RUNNING.has(j.status)) bits.push(fmtBytes(j.speed) + "/s");
     if(j.message) bits.push(j.message);
     if(j.error) bits.push(j.error);
     if(j.fits === false){
       bits.push(`not enough space (${fmtBytes(j.free_bytes)} free)`);
     }
-    const bar = (j.status==="downloading"||j.status==="done"||j.status==="verifying")
+    // Only while running: a finished card with a full bar says nothing, and a
+    // done-but-empty job looked "complete" while it had downloaded nothing.
+    const bar = (j.status === "downloading" || j.status === "verifying")
       ? `<div class="bar"><i style="width:${pct}%"></i></div>` : "";
     const scoped = j.scoped_query && j.scoped_query !== j.label
       ? `<div class="scoped">${esc(j.scoped_query)}</div>` : "";
@@ -839,8 +894,9 @@ function renderJobs(st){
     } else if(j.status === "queued" || j.status === "resolving"){
       acts = `<button class="btn ghost sm" data-cancel="${esc(j.id)}">Cancel</button>`;
     } else if(j.status === "done"){
-      acts = `<button class="btn ghost sm" data-open="${esc(j.id)}">Open folder</button>`
-           + `<button class="btn ghost sm" data-read="${esc(j.id)}">Read</button>`;
+      acts = (empty ? "" : `<button class="btn ghost sm" data-open="${esc(j.id)}">Open folder</button>`
+                        + `<button class="btn ghost sm" data-read="${esc(j.id)}">Read</button>`)
+           + `<button class="btn ghost sm" data-remove="${esc(j.id)}" title="Remove from history">Remove</button>`;
     } else if(j.status === "failed"){
       acts = `<button class="btn ghost sm" data-retry="${esc(j.id)}">Retry</button>`;
     }
@@ -855,7 +911,28 @@ function renderJobs(st){
       ? `<img class="qcov" loading="lazy" alt=""
               src="https://archive.org/services/img/${esc(j.identifier)}"
               onerror="this.style.display='none'">` : "";
-    return `<div class="job" data-job="${esc(j.id)}">
+    // A section header the first time a bucket appears on this page.
+    const sec = queueSection(j.status);
+    let head = "";
+    if(sec !== lastSection){
+      const n2 = jobs.filter(x => queueSection(x.status) === sec).length;
+      head = `<div class="qsec"><span class="qsec-t">${SECTION_TITLE[sec][0]}</span>
+                <span class="qsec-n">${n2}</span>
+                <span class="qsec-h">${SECTION_TITLE[sec][1]}</span></div>`;
+      lastSection = sec;
+    }
+    // Files currently in flight, so a job with twelve connections shows twelve
+    // downloads rather than one anonymous percentage.
+    const live = (j.live || []).filter(f => f.pct < 100);
+    const liveHtml = live.length > 1 ? `<div class="qlive">${live.slice(0,8).map(f=>`
+      <div class="ql"><span class="qlbar"><i style="width:${f.pct}%"></i></span>
+      <span class="qlpct">${f.pct}%</span>
+      <span class="qlsz">${fmtBytes(f.done)} / ${fmtBytes(f.total)}</span>
+      <span class="qlsp">${f.speed ? fmtBytes(f.speed)+"/s" : ""}</span></div>`).join("")}
+      ${live.length > 8 ? `<div class="hint" style="margin:4px 0 0">…and ${live.length-8} more in flight</div>` : ""}
+      </div>` : "";
+
+    return head + `<div class="job" data-job="${esc(j.id)}">
       ${cov}
       <div>
         <div class="title">${esc(j.series || j.label)}</div>
@@ -864,11 +941,12 @@ function renderJobs(st){
         <div class="meta">${bits.map(esc).join(" · ")}</div>
         ${scoped}
         ${bar}
+        ${liveHtml}
         ${expandedJobs.has(j.id) ? jobItemsHtml(j.id) : ""}
       </div>
       <div class="jright">
         ${WAITING.has(j.status) && j.pos ? `<span class="qpos" title="Position in the queue">#${j.pos}</span>` : ""}
-        <span class="pill ${esc(j.status)}">${esc(STATUS_LABEL[j.status]||j.status)}</span>
+        <span class="pill ${empty ? "fail" : esc(j.status)}">${esc(empty ? "Nothing downloaded" : (STATUS_LABEL[j.status]||j.status))}</span>
         ${reorder}
         ${acts}
       </div>

@@ -126,7 +126,7 @@ def http_json(url: str, timeout: int = 60):
     """GET a URL and return parsed JSON. No retry here — callers that can
     recover (the resolver, the per-item probe) do their own attempts."""
 
-    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/2.1.8"})
+    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/2.1.9"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.load(r)
 
@@ -154,6 +154,9 @@ class Job:
     next_try_at: float = 0.0   # retry ladder: earliest time a retry may run
     fatal: bool = False        # a permanent failure — never retried
     desc: str = ""             # the source's own blurb, if it had a useful one
+    # Files downloading right now, keyed by aria2's gid. A job runs several at
+    # once (-j), so one percentage for the whole job hides what is happening.
+    live: dict = field(default_factory=dict)
     created: float = field(default_factory=time.time)
     updated: float = field(default_factory=time.time)
 
@@ -174,6 +177,7 @@ class Job:
             "n_items": len(self.items), "total_bytes": self.total_bytes,
             "done_bytes": self.done_bytes, "speed": self.speed,
             "message": self.message, "error": self.error,
+            "live": list(self.live.values())[-12:],
             "retries": self.retries, "created": self.created,
             "updated": self.updated,
             "scoped_query": self.scoped_query,
@@ -189,6 +193,15 @@ class Job:
                                  if i.get("identifier") and not i.get("skip")), "")
                            or _ident_from_url(self.source or "")),
             "skipped": len(skipped),
+            # How many items the job actually expected to fetch. A job can end
+            # "done" with zero of them: every candidate was skipped or missing,
+            # which is not the same thing as success.
+            "n_ok": len([i for i in self.items if not i.get("skip")]),
+            # Items genuinely on disk. A job can be "done" with none of them:
+            # every candidate missing at the source is not a success.
+            "n_disk": sum(1 for i in self.items
+                          if i.get("outname") and os.path.isfile(
+                              os.path.join(self.dir, i["outname"]))),
             "free_bytes": free,
             "fits": (free == 0) or (self.total_bytes <= free),
         }
@@ -1307,6 +1320,15 @@ class Engine:
                 m = re.search(r"\((\d{1,3})%\)", line)
                 if m:
                     job.done_bytes = int(job.total_bytes * int(m.group(1)) / 100)
+                # [#gid 4.5MiB/41MiB(11%) CN:1 DL:1.2MiB ETA:35s]
+                f = re.match(r"\[#(\w+)\s+([\d.]+\w+)/([\d.]+\w+)\((\d{1,3})%\)"
+                             r"(?:.*?DL:([\d.]+\w+))?", line)
+                if f:
+                    gid, done, total, pct, sp = f.groups()
+                    job.live[gid] = {"gid": gid, "pct": int(pct),
+                                     "done": _parse_speed(done),
+                                     "total": _parse_speed(total),
+                                     "speed": _parse_speed(sp) if sp else 0}
                 sp = re.search(r"DL:([\d.]+\w+)", line)
                 if sp:
                     job.speed = _parse_speed(sp.group(1))
@@ -1314,6 +1336,7 @@ class Engine:
 
             proc.wait()
         job.done_bytes = job.total_bytes
+        job.live = {}
 
         # --- verify: a job is done ONLY if every file checks out
         job.status = "verifying"

@@ -3,7 +3,29 @@
 Notable changes to HardlyReading. Versions are tagged on GitHub with matching
 release notes.
 
-## [2.1.8] — 2026-10-20
+## [2.1.9] — 2026-10-20
+
+### Added
+
+- **The queue is grouped by what it is doing.** Four sections, in the order you
+  care about them: **Downloading now**, **Needs attention** (failed), **Waiting**
+  (in run order) and **Finished** (newest first), each with a count. Before, a
+  finished job and a running one looked the same in one flat list.
+- **Concurrent transfers are visible.** aria2 runs several files at once (-j),
+  so the running card lists every file in flight with its own percentage, size
+  and speed — five thin bars rather than one anonymous number.
+
+### Fixed
+
+- A job that finished with nothing on disk said **Done** in green. It now says
+  **Nothing downloaded**, and loses the Open folder / Read buttons that had
+  nothing to act on.
+- Speed and the progress bar appear only while a job is running; a finished card
+  used to show a full bar and a stale "36 MB/s".
+- `queueRows()` read the global snapshot instead of the state it was given, and
+  the four status buckets overlapped, which rendered the same card twice.
+
+
 
 ### Added
 
