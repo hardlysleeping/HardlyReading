@@ -3,7 +3,21 @@
 Notable changes to HardlyReading. Versions are tagged on GitHub with matching
 release notes.
 
-## [2.1.7] — 2026-10-20
+## [2.1.8] — 2026-10-20
+
+### Added
+
+- **Descriptions are indexed, not re-fetched.** A `descriptions` table in the
+  same SQLite file as reading progress stores each item's blurb the first time
+  it is seen, keyed by identifier. Repeat lookups went from 141 ms to 6 ms, and
+  a library row shows its text without a network call.
+- **Empty is cached too**: "this item has no description" is an answer worth
+  remembering, otherwise every open would ask again for the items that will
+  never have one.
+- The queue resolver writes to the same index, so a book downloaded after the
+  fact carries the description the search card showed.
+
+
 
 ### Added
 

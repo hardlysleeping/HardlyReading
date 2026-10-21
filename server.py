@@ -45,7 +45,7 @@ ENGINE = engine.Engine()
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "HardlyReading/2.1.7"
+    server_version = "HardlyReading/2.1.8"
 
     def log_message(self, fmt, *args):
         pass  # quiet
@@ -148,7 +148,8 @@ class Handler(BaseHTTPRequestHandler):
                 "progress": done, "finished": False, "downloaded": False,
                 "status": status, "identifier": ident,
                 "item_url": f"https://archive.org/details/{ident}" if ident else "",
-                "desc": (entry or {}).get("desc") or "",
+                "desc": (entry or {}).get("desc")
+                        or ((ENGINE.cached_desc(ident) or "") if ident else ""),
             }
         pages = engine.comic_pages(path)
         is_pdf = path.lower().endswith(".pdf")
@@ -178,7 +179,8 @@ class Handler(BaseHTTPRequestHandler):
             "status": status,
             "identifier": ident,
             "item_url": f"https://archive.org/details/{ident}" if ident else "",
-            "desc": (entry or {}).get("desc") or "",
+            "desc": (entry or {}).get("desc")
+                    or ((ENGINE.cached_desc(ident) or "") if ident else ""),
         }
 
     @staticmethod
@@ -355,7 +357,8 @@ class Handler(BaseHTTPRequestHandler):
             if not ident:
                 return self._send(400, {"error": "no identifier"})
             return self._send(200, {"ident": ident,
-                                    "desc": engine.item_description(ident, title)})
+                                    "desc": engine.item_description(ident, title,
+                                                                    ENGINE)})
 
         if path == "/api/stream":
             # One page of a book read straight from archive.org, for library

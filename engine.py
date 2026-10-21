@@ -126,7 +126,7 @@ def http_json(url: str, timeout: int = 60):
     """GET a URL and return parsed JSON. No retry here — callers that can
     recover (the resolver, the per-item probe) do their own attempts."""
 
-    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/2.1.7"})
+    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/2.1.8"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.load(r)
 
@@ -586,8 +586,17 @@ def classify_url(url: str):
 class Resolver:
     """Turns a job into a concrete list of artifacts."""
 
-    def __init__(self, workers: int = 12):
+    def __init__(self, workers: int = 12, engine=None):
         self.workers = workers
+        self.engine = engine
+
+    def _desc_for(self, ident: str, md: dict) -> str:
+        """This item's blurb, remembered in the index as it is used."""
+        desc = useful_desc(plain_text(md.get("description")),
+                           md.get("title") or ident)
+        if self.engine is not None:
+            self.engine.store_desc(ident, desc)
+        return desc
 
     def resolve(self, job: Job, progress=None):
         if job.kind in ("search", "query"):
@@ -639,9 +648,7 @@ class Resolver:
                         "identifier": ident,
                         # This item's own blurb, filtered the same way a search
                         # card filters, falling back to the collection's.
-                        "desc": (useful_desc(plain_text(md.get("description")),
-                                             md.get("title") or ident)
-                                 or job.desc),
+                        "desc": (self._desc_for(ident, md) or job.desc),
                         "title": m.get("metadata", {}).get("title", ident),
                         "file": f["name"],
                         "format": f.get("format"),
@@ -701,6 +708,43 @@ class Engine:
         # the background from archive.org, once, so old rows explain themselves
         # without the user re-adding anything.
         threading.Thread(target=self.backfill_descriptions, daemon=True).start()
+
+    def cached_desc(self, ident: str, max_age: float = 7 * 86400):
+        """A description from the index, or None when it is absent or stale.
+
+        An empty string is cached too: "archive.org has nothing for this item"
+        is an answer worth remembering, and without it every open would ask
+        again for the items that will never have one.
+        """
+        try:
+            conn = self._db()
+            if not conn:
+                return None
+            row = conn.execute(
+                "SELECT desc, updated FROM descriptions WHERE ident=?",
+                (ident.lower(),)).fetchone()
+            if not row:
+                return None
+            if time.time() - float(row[1] or 0) > max_age:
+                return None
+            return row[0] or ""
+        except Exception:
+            return None
+
+    def store_desc(self, ident: str, desc: str):
+        try:
+            conn = self._db()
+            if not conn:
+                return
+            with self._lock_db:
+                conn.execute(
+                    "INSERT INTO descriptions (ident, desc, updated) VALUES (?,?,?) "
+                    "ON CONFLICT(ident) DO UPDATE SET desc=excluded.desc, "
+                    "updated=excluded.updated",
+                    (ident.lower(), desc or "", time.time()))
+                conn.commit()
+        except Exception:
+            pass
 
     def backfill_descriptions(self):
         """Give existing jobs the blurb they were queued without.
@@ -792,6 +836,15 @@ class Engine:
                     book    TEXT PRIMARY KEY,
                     page    INTEGER NOT NULL DEFAULT 0,
                     total   INTEGER NOT NULL DEFAULT 0,
+                    updated REAL NOT NULL
+                )""")
+            # Descriptions live in the same index: they are metadata that never
+            # changes, and re-asking archive.org for every row on every open is
+            # both slow and rude.
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS descriptions (
+                    ident   TEXT PRIMARY KEY,
+                    desc    TEXT NOT NULL DEFAULT '',
                     updated REAL NOT NULL
                 )""")
             conn.commit()
@@ -1103,7 +1156,7 @@ class Engine:
             job.updated = time.time()
 
         try:
-            items = Resolver().resolve(job, progress=progress)
+            items = Resolver(engine=self).resolve(job, progress=progress)
             ok = [i for i in items if not i.get("skip")]
 
             # --- Komga layout: one folder per series, files named so they
@@ -2400,14 +2453,19 @@ def stream_item_pages(ident: str, width: int = STREAM_WIDTH) -> int:
     return 0
 
 
-def item_description(ident: str, title: str = "") -> str:
+def item_description(ident: str, title: str = "", engine=None) -> str:
     """The description archive.org holds for one item, filtered like a card.
 
-    Called when a library row is opened and its blurb was never stored, so an
-    expanded row shows what the search card for the same item would show.
+    Checked against the index first: descriptions never change, and a row that
+    is opened twice should not cost two requests. An empty result is cached as
+    well, so items with nothing to say are asked exactly once.
     """
     if not ident:
         return ""
+    if engine is not None:
+        hit = engine.cached_desc(ident)
+        if hit is not None:
+            return hit
     try:
         meta = _item_files(ident)
     except Exception:
@@ -2415,8 +2473,11 @@ def item_description(ident: str, title: str = "") -> str:
     if not meta:
         return ""
     md = meta.get("metadata") or {}
-    return useful_desc(plain_text(md.get("description")),
+    desc = useful_desc(plain_text(md.get("description")),
                        title or md.get("title") or ident)
+    if engine is not None:
+        engine.store_desc(ident, desc)
+    return desc
 
 
 def stream_page(ident: str, page: int, width: int = STREAM_WIDTH):
