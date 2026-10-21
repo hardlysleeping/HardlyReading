@@ -3,7 +3,29 @@
 Notable changes to HardlyReading. Versions are tagged on GitHub with matching
 release notes.
 
-## [2.1.6] — 2026-10-20
+## [2.1.7] — 2026-10-20
+
+### Added
+
+- **Runs on boot.** `contrib/hardlyreading.service` is a systemd user unit that
+  starts the server, restarts it if it dies, and survives a reboot;
+  `loginctl enable-linger` covers the case where nobody logs in. The README
+  explains the two paths to edit.
+
+### Changed
+
+- **An expanded library row shows the same description its search card would.**
+  Rows carrying no stored blurb now ask archive.org once when opened
+  (`/api/desc`), through the same filter the search cards use, so the two views
+  cannot disagree.
+- Descriptions are stored **per item** rather than per job: a collection's blurb
+  used to be copied onto every issue in it, which made expanded rows describe the
+  collection instead of the book.
+- A row whose item has no description says so in muted italic — *No description
+  for this item on archive.org* — instead of showing an empty panel that reads
+  like a bug.
+
+
 
 ### Fixed
 
@@ -372,6 +394,7 @@ First release.
 - Built-in CBZ / CBR / PDF reader; CBR needs `unrar`, `bsdtar` or `7z`
 - Cross-platform launcher that finds `aria2c` and opens the browser
 
+[2.1.7]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.1.7
 [2.1.6]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.1.6
 [2.1.5]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.1.5
 [2.1.4]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.1.4

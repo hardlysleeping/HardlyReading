@@ -1,0 +1,22 @@
+[Unit]
+Description=HardlyReading (Internet Archive magazine, comic and PDF library)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+# Point this at the folder you cloned HardlyReading into.
+WorkingDirectory=/home/you/apps/HardlyReading
+ExecStart=/usr/bin/python3 -B server.py --port 8788
+# aria2c comes from Homebrew, which a unit does not inherit on PATH.
+Environment=PATH=/home/linuxbrew/.linuxbrew/bin:/usr/local/bin:/usr/bin:/bin
+Environment=IA_ARIA2=/home/linuxbrew/.linuxbrew/bin/aria2c
+Environment=PYTHONUNBUFFERED=1
+Restart=on-failure
+RestartSec=5
+
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=default.target

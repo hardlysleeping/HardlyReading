@@ -231,6 +231,23 @@ the job. The list is fetched when you open the card, not with the 1.2 s poll, so
 a collection of 400 issues costs nothing until you ask for it. A card you opened
 stays open.
 
+## Start it on boot
+
+`contrib/hardlyreading.service` is a systemd user unit. Copy it, point the two
+paths at your install, and enable it:
+
+```sh
+mkdir -p ~/.config/systemd/user
+cp contrib/hardlyreading.service ~/.config/systemd/user/
+# edit WorkingDirectory and the IA_ARIA2 path to match your setup
+systemctl --user daemon-reload
+systemctl --user enable --now hardlyreading.service
+```
+
+`Restart=on-failure` brings it back if it dies. A user unit starts at login;
+add `loginctl enable-linger "$USER"` if the machine should serve it without
+anyone logging in.
+
 ## Read a book without downloading it
 
 Rows for work that is not on disk have a **Read** button. It streams page images

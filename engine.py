@@ -126,7 +126,7 @@ def http_json(url: str, timeout: int = 60):
     """GET a URL and return parsed JSON. No retry here — callers that can
     recover (the resolver, the per-item probe) do their own attempts."""
 
-    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/2.1.6"})
+    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/2.1.7"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.load(r)
 
@@ -637,7 +637,11 @@ class Resolver:
                                                md.get("title") or job.label)
                     entry = {
                         "identifier": ident,
-                        "desc": job.desc,
+                        # This item's own blurb, filtered the same way a search
+                        # card filters, falling back to the collection's.
+                        "desc": (useful_desc(plain_text(md.get("description")),
+                                             md.get("title") or ident)
+                                 or job.desc),
                         "title": m.get("metadata", {}).get("title", ident),
                         "file": f["name"],
                         "format": f.get("format"),
@@ -2394,6 +2398,25 @@ def stream_item_pages(ident: str, width: int = STREAM_WIDTH) -> int:
             if last >= 0:
                 return min(last + 1, STREAM_MAX_PAGES)
     return 0
+
+
+def item_description(ident: str, title: str = "") -> str:
+    """The description archive.org holds for one item, filtered like a card.
+
+    Called when a library row is opened and its blurb was never stored, so an
+    expanded row shows what the search card for the same item would show.
+    """
+    if not ident:
+        return ""
+    try:
+        meta = _item_files(ident)
+    except Exception:
+        return ""
+    if not meta:
+        return ""
+    md = meta.get("metadata") or {}
+    return useful_desc(plain_text(md.get("description")),
+                       title or md.get("title") or ident)
 
 
 def stream_page(ident: str, page: int, width: int = STREAM_WIDTH):

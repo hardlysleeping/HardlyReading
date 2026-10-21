@@ -45,7 +45,7 @@ ENGINE = engine.Engine()
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "HardlyReading/2.1.6"
+    server_version = "HardlyReading/2.1.7"
 
     def log_message(self, fmt, *args):
         pass  # quiet
@@ -345,6 +345,17 @@ class Handler(BaseHTTPRequestHandler):
                                     "series": j.series, "total": len(j.items),
                                     "desc": getattr(j, "desc", "") or "",
                                     "items": rows})
+
+        if path == "/api/desc":
+            # Description for one item, on demand. A library row whose blurb
+            # was never stored asks once when it is opened, so the expanded row
+            # says what the search card for that item says.
+            ident = (qs.get("ident") or [""])[0]
+            title = (qs.get("title") or [""])[0]
+            if not ident:
+                return self._send(400, {"error": "no identifier"})
+            return self._send(200, {"ident": ident,
+                                    "desc": engine.item_description(ident, title)})
 
         if path == "/api/stream":
             # One page of a book read straight from archive.org, for library

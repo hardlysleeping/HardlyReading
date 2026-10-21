@@ -387,6 +387,7 @@
     align-items:flex-start}
   .libdesc{margin:0 0 9px;font-size:12.5px;line-height:1.55;color:#d3dae8;
     flex-basis:100%}
+  .libdesc.none{color:var(--dim);font-style:italic}
   .libdetail dl{display:grid;grid-template-columns:auto 1fr;gap:3px 14px;
     margin:0;font-size:11.5px;flex:1;min-width:220px}
   .libdetail dt{color:var(--dim)}
@@ -1544,7 +1545,14 @@ function renderLibrary(){
       // Reading is an explicit Read in that detail, so a stray click on the list
       // no longer throws a book over the screen.
       const k = el.dataset.key;
-      if(expandedLib.has(k)) expandedLib.delete(k); else expandedLib.add(k);
+      if(expandedLib.has(k)) expandedLib.delete(k);
+      else{
+        expandedLib.add(k);
+        // A row can predate the blurb, or have been scanned from disk before
+        // anyone stored one; fetch it once so the open row matches search.
+        const it = libItems.find(x => x.key === k);
+        if(it && !it.desc && it.identifier) loadRowDesc(it);
+      }
       renderLibrary();
     };
   });
@@ -1594,10 +1602,29 @@ function libDetailHtml(it){
   }
 
   return `<div class="libdetail">
-    ${it.desc ? `<p class="libdesc">${esc(it.desc)}</p>` : ""}
+    ${it.desc
+      ? `<p class="libdesc">${esc(it.desc)}</p>`
+      // Silence looks like a bug. Say whose silence it is: this is the item's
+      // own record, and search would show the same nothing for it.
+      : `<p class="libdesc none">No description for this item on archive.org.</p>`}
     <dl>${rows.map(([k,v])=>`<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}</dl>
     ${actions.length ? `<div class="libacts">${actions.join("")}</div>` : ""}
   </div>`;
+}
+
+const descFetched = new Set();
+
+async function loadRowDesc(it){
+  if(!it.identifier || descFetched.has(it.identifier)) return;
+  descFetched.add(it.identifier);
+  try{
+    const r = await api(`/api/desc?ident=${encodeURIComponent(it.identifier)}` +
+                        `&title=${encodeURIComponent(it.name || it.series || "")}`);
+    if(r && r.desc){
+      it.desc = r.desc;
+      renderLibrary();
+    }
+  }catch(e){ /* a description is a nicety; never break the list for it */ }
 }
 
 function rowHtml(it){
