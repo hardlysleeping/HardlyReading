@@ -3,7 +3,21 @@
 Notable changes to HardlyReading. Versions are tagged on GitHub with matching
 release notes.
 
-## [2.4.2] — 2026-10-20
+## [2.4.3] — 2026-10-20
+
+### Changed
+
+- README rewritten around what the app does now: cover grid and list views,
+  filter chips and favourites, streaming a book without downloading, the
+  grouped queue, the start-on-boot switch, and PDF covers. Limitations gained
+  the honest ones — search is live rather than local, streaming needs a
+  connection, lendable items still fail, PDF covers need poppler, start-on-boot
+  is systemd-only.
+- Screenshots re-shot from the current build: search with descriptions, library
+  grid, library list with an open detail panel, the finished queue, and the PDF
+  reader.
+
+
 
 ### Fixed
 

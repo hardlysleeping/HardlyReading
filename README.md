@@ -25,8 +25,6 @@ Everything runs on your own machine. No account, no cloud, no telemetry.
 
 ---
 
-![Download queue](docs/queue.png)
-
 ## How it works
 
 Four files, no framework, no build step:
@@ -80,14 +78,34 @@ UI never drives a download directly — it only posts intent and reads back stat
   missing items are marked unavailable instead of retrying forever.
 - **Komga-ready output** — one folder per series, files named `<Series> NNN (Year).ext`
   so they sort in reading order.
-- **Library + reader** — browse what you downloaded, open a CBZ or PDF, progress
-  is saved server-side in SQLite so it follows you between devices.
+- **Library + reader** — list or cover-grid view, filter chips (favourites,
+  reading, unread, finished, not downloaded), a search box, and favourites.
+  Open a CBZ or PDF; progress is saved server-side in SQLite so it follows you
+  between devices.
+- **Read without downloading** — stream a book's pages straight from
+  archive.org, with the same reader and the same saved position.
+- **A queue that shows its work** — grouped into Downloading now / Needs
+  attention / Waiting / Finished, with per-file progress for concurrent
+  transfers.
 
 ## Screenshots
 
-| Search | Library |
+Search — descriptions under each result, click **more** for the whole blurb;
+tick the ones you want and add them together:
+
+![Search](docs/search.png)
+
+The library, as a cover grid or a list. Filter chips narrow it; the star marks
+favourites; **details** on a row opens size, pages, position and actions:
+
+| Cover grid | List with details |
 |---|---|
-| ![Search](docs/search.png) | ![Library](docs/library.png) |
+| ![Library grid](docs/library.png) | ![Library list](docs/library-list.png) |
+
+The queue says what it is doing — Downloading now, Needs attention, Waiting,
+Finished — and a running job lists every file in flight:
+
+![Download queue](docs/queue.png)
 
 Reader — fits the page, arrow keys to turn, remembers your place:
 
@@ -174,6 +192,22 @@ What that does and does not buy you, plainly:
 - Install prompts need `https://` or `localhost`. On a plain-HTTP LAN address the
   page still works, it just will not offer to install.
 
+### The library: grid, filters, favourites
+
+Two views — a **list** for detail and a **cover grid** for browsing — switched
+with the toggle beside the filter box and remembered per browser.
+
+Filter chips narrow the shelf: **All**, **★ Favourites**, **Reading**, **Unread**,
+**Finished**, **Not downloaded**. They stack with the text filter (which also
+searches descriptions), and the pager counts what is left.
+
+**Favourites** are a star on every row and card, stored in SQLite under the same
+key as reading progress — so a favourite survives a re-scan, a re-download and a
+restart.
+
+PDF covers are rendered from page one with poppler's `pdftoppm` when it is
+installed; without it a PDF keeps a plain "PDF" tile rather than a broken image.
+
 ### The library also shows what you have not downloaded yet
 
 A title the queue knows about but which is not on disk still appears, marked
@@ -233,8 +267,18 @@ stays open.
 
 ## Start it on boot
 
-`contrib/hardlyreading.service` is a systemd user unit. Copy it, point the two
-paths at your install, and enable it:
+There are two ways to do this, and the first one is a switch.
+
+**In the app:** Settings → Start-up → **Start when the computer starts**. It
+writes a systemd user unit for *this* install — its folder, its port, a system
+interpreter — and enables it. Switching it off removes the unit. It is off
+unless you turn it on, and it reports "unsupported" on systems without systemd.
+
+The queue does not depend on this: `state.json` holds it, and aria2 resumes its
+`.aria2` partial files, so a restart continues where it stopped either way.
+
+**By hand**, if you prefer to keep the unit yourself:
+
 
 ```sh
 mkdir -p ~/.config/systemd/user
@@ -282,17 +326,18 @@ once you have started, and a dimmed row with a `finished` badge when you reach
 the end. **Clear reading history** in Settings forgets every saved position —
 files are untouched.
 
-Files land in your downloads folder, under one subfolder per series:
+Files land in your downloads folder — `~/Documents/HardlyReading` unless you
+change it — under one subfolder per series:
 
 ```
-~/Downloads/HardlyReading/
+~/Documents/HardlyReading/
 └── MAD Magazine/
     ├── MAD Magazine 179 (1976).cbz
     └── MAD Magazine 180 (1976).cbz
 ```
 
-Point Komga (or any comic server) at `~/Downloads/HardlyReading` and each
-subfolder becomes a series.
+Point Komga (or any comic server) at that folder and each subfolder becomes a
+series.
 
 ## The reader
 
@@ -319,14 +364,14 @@ The gear in the header opens a panel; changes save as you edit and persist in
 
 | Setting | Default | What it does |
 |---|---|---|
+| Start when the computer starts | **off** | Installs a systemd user unit for this install. The queue survives a restart either way. |
 | Download folder | *empty* | Empty means `~/Documents/HardlyReading`, created on the first download. Point it anywhere else and the Library follows it. |
 | Show "reader" label | on | The small label in the reader header. Off gives a clean page. |
 | Clear reading history | — | Forgets every saved page position. Files stay on disk. |
 | Ask before downloading | on | Show the file plan and total size, then wait for you. |
 | Skip files I already have | on | Drop entries whose checksum is already in the folder. |
 | Komga folder naming | on | One folder per series with issue-ordered filenames. Off keeps archive.org's original filenames in a folder named after the link. |
-| Download folder | `~/Downloads/HardlyReading` | Where files go. |
-| Parallel files | 12 | How many files aria2 fetches at once. |
+| Parallel files | 12 | How many files aria2 fetches at once — the queue card shows each one. |
 | Pause between jobs | 30s | Gap between one job finishing and the next starting. |
 
 Job cards can be **cancelled** before they start and **removed** from the list,
@@ -337,7 +382,8 @@ and library items can be **deleted** (file plus its reading position).
 | What | Windows | macOS | Linux |
 |---|---|---|---|
 | Settings & queue | `%APPDATA%\hardlyreading` | `~/Library/Application Support/hardlyreading` | `~/.config/hardlyreading` |
-| Downloads | `%USERPROFILE%\Downloads\HardlyReading` | `~/Downloads/HardlyReading` | `~/Downloads/HardlyReading` |
+| Downloads | `%USERPROFILE%\Documents\HardlyReading` | `~/Documents/HardlyReading` | `~/Documents/HardlyReading` |
+| Cached covers & streamed pages | under the settings folder: `thumbs/`, `stream/` | same | same |
 
 ## Limitations
 
@@ -364,9 +410,22 @@ Worth knowing before you point it at a 500-issue collection:
   without a rendering library, by counting page objects in the file; PDFs that
   compress their object streams report nothing until pdf.js opens them and
   records the real total with your position.
+- **Search is live, not local.** Every query goes to archive.org; there is no
+  offline catalogue. What *is* stored locally is your reading positions,
+  descriptions, favourites and cached images, in SQLite and two cache folders.
+  archive.org also refuses pages past its 10,000-result ceiling — the search
+  falls back to page 1 and says so.
+- **Read without downloading needs a connection** for every page, and the pages
+  are lower resolution than the file. The reader says so in a note you can
+  dismiss; **Download it** in that note fetches the real file.
+- **Lendable items still won't work.** Items that require borrowing ("restricted",
+  "lending", "borrow") are treated as permanently unavailable — a streaming
+  reader does not get around archive.org's lending.
+- **PDF covers need poppler.** The library renders page one of a PDF with
+  `pdftoppm` when it is installed. Without it a PDF shows a plain tile.
 - **Tested on Linux.** `run.py` handles Windows and macOS paths, the `aria2c.exe`
   lookup and the winget fallback, but has not been run on those platforms — treat
-  them as untested rather than supported.
+  them as untested rather than supported. Start-on-boot is systemd-only.
 
 ## Skipping what you already have
 
