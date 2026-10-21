@@ -284,6 +284,18 @@
   .ji.skip .jinm{color:var(--dim)}
   .jisz,.jisk{flex:none;font-size:11px}
   .jisk{color:var(--ok)}
+  /* The blurb is clamped until the card is open, so a long one cannot make
+     one row of the queue three times taller than its neighbours. */
+  /* An explicit affordance, because "click the card" is not a thing anyone
+     guesses. It sits under the blurb, small and quiet, and is the whole card's
+     hit area anyway. */
+  .jmore{margin-top:6px;font-size:11px;color:var(--accent2);
+    letter-spacing:.01em;cursor:pointer}
+  .job:hover .jmore{text-decoration:underline}
+  .jdesc{margin-top:5px;font-size:12px;line-height:1.5;color:#c2cbdc;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
+    overflow:hidden;cursor:pointer}
+  .jdesc.open{-webkit-line-clamp:unset;display:block;color:#d3dae8}
   .qcov{width:46px;height:62px;object-fit:cover;border-radius:5px;
     border:1px solid var(--line);background:var(--panel2)}
   .qpos{font-size:11.5px;color:var(--dim);font-variant-numeric:tabular-nums}
@@ -350,13 +362,18 @@
   .rfilewrap .rfile{border-radius:8px}
   .rfile.open{border-color:rgba(79,140,255,.5);border-bottom-left-radius:0;
     border-bottom-right-radius:0}
-  .caret{color:var(--dim);font-size:15px;line-height:1;margin-left:2px;
-    transition:transform .15s;flex:none}
-  .rfile.open .caret{transform:rotate(90deg);color:var(--accent)}
+  /* A labelled toggle: a bare chevron does not read as "there is more here". */
+  .caret{color:var(--accent2);font-size:11px;line-height:1;margin-left:auto;
+    flex:none;white-space:nowrap;cursor:pointer;padding-left:10px}
+  .rfile .pg + .caret{margin-left:10px}
+  .rfile:hover .caret{text-decoration:underline}
+  .rfile.open .caret{color:var(--dim)}
   .libdetail{border:1px solid rgba(79,140,255,.5);border-top:none;
     border-radius:0 0 8px 8px;background:rgba(79,140,255,.04);
     padding:10px 14px 11px 58px;display:flex;flex-wrap:wrap;gap:10px 22px;
     align-items:flex-start}
+  .libdesc{margin:0 0 9px;font-size:12.5px;line-height:1.55;color:#d3dae8;
+    flex-basis:100%}
   .libdetail dl{display:grid;grid-template-columns:auto 1fr;gap:3px 14px;
     margin:0;font-size:11.5px;flex:1;min-width:220px}
   .libdetail dt{color:var(--dim)}
@@ -828,6 +845,8 @@ function renderJobs(st){
       ${cov}
       <div>
         <div class="title">${esc(j.series || j.label)}</div>
+        ${j.desc ? `<div class="jdesc${expandedJobs.has(j.id)?" open":""}">${esc(j.desc)}</div>` : ""}
+        <div class="jmore">${expandedJobs.has(j.id) ? "hide files" : "show files"}</div>
         <div class="meta">${bits.map(esc).join(" · ")}</div>
         ${scoped}
         ${bar}
@@ -877,20 +896,6 @@ document.addEventListener("click", async (e)=>{
   if(op){
     const it = libItems.find(x => x.key === op.dataset.open);
     if(it) openBook(it);
-    return;
-  }
-  const rv = e.target.closest("[data-reveal]");
-  if(rv){
-    try{
-      const r = await api("/api/reveal", {method:"POST",
-        headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({id: rv.dataset.reveal})});
-      if(r && r.copied) toast("Folder path copied: " + r.opened);
-      else toast("Opened the folder");
-    }catch(err){
-      // A file manager is a desktop thing; on a remote host say so plainly.
-      toast("Could not open a folder here: " + err.message);
-    }
     return;
   }
   const dr = e.target.closest("[data-delrow]");
@@ -1537,25 +1542,29 @@ function libDetailHtml(it){
   if(it.pages) rows.push(["Pages", String(it.pages)]);
   if(it.progress) rows.push(["Reading", `${it.progress} of ${it.pages || "?"}`
     + (it.pages ? ` · ${Math.round(it.progress / it.pages * 100)}%` : "")]);
-  if(it.kind){
+  // A row with no file on disk has no format yet; "pending" is a state, not a
+  // format, and printing it reads like a bug.
+  if(it.kind && it.kind !== "pending"){
     const fmt = {cbz:"CBZ", cbr:"CBR", pdf:"PDF", cbt:"CBT"}[it.kind]
-             || it.kind.toUpperCase();
-    rows.push(["Format", fmt]);
+             || (it.kind === "other" ? "" : it.kind.toUpperCase());
+    if(fmt) rows.push(["Format", fmt]);
   }
-  if(it.status && !it.downloaded) rows.push(["State", it.status]);
+  if(it.status && !it.downloaded){
+    // Internal queue words read like bugs on screen; say what the row means.
+    const word = {planned:"ready to download", queued:"queued to download",
+                  resume:"resuming", resolving:"finding files",
+                  downloading:"downloading", verifying:"checking the file",
+                  failed:"download failed", cancelled:"cancelled"}[it.status]
+                 || it.status;
+    rows.push(["State", word]);
+  }
 
   const actions = [];
+  // The row's own Read stays where it is; the panel adds the things you only
+  // want once you are looking at one book.
   if(it.downloaded && it.readable && !it.partial){
-    actions.push(`<button class="btn sm" data-open="${esc(it.key)}">Read</button>`);
-    actions.push(`<button class="btn ghost sm" data-reveal="${esc(it.job)}"
-       title="Show this file in the file manager">Show in folder</button>`);
     actions.push(`<button class="btn ghost sm" data-delrow="${esc(it.key)}"
        title="Delete this file from disk">Delete</button>`);
-  } else if(it.identifier){
-    actions.push(`<button class="btn sm" data-stream="${esc(it.job)}"
-       data-name="${esc(it.name)}" data-ident="${esc(it.identifier)}"
-       data-key="${esc(it.key)}"
-       title="Read straight from archive.org — nothing is downloaded">Read</button>`);
   }
   if(it.downloaded && it.identifier && it.item_url){
     actions.push(`<a class="btn ghost sm" href="${esc(it.item_url)}" target="_blank"
@@ -1566,6 +1575,7 @@ function libDetailHtml(it){
   }
 
   return `<div class="libdetail">
+    ${it.desc ? `<p class="libdesc">${esc(it.desc)}</p>` : ""}
     <dl>${rows.map(([k,v])=>`<dt>${esc(k)}</dt><dd>${esc(v)}</dd>`).join("")}</dl>
     ${actions.length ? `<div class="libacts">${actions.join("")}</div>` : ""}
   </div>`;
@@ -1611,7 +1621,7 @@ function rowHtml(it){
       </div>
       ${badge}
       <span class="pg">${it.kind === "cbz" ? it.pages + " pages" : "PDF"}</span>
-      <span class="caret">›</span>
+      <span class="caret" title="${open?"Hide details":"Show details"}">${open ? "▴ hide" : "▾ details"}</span>
     </div>
     ${open ? libDetailHtml(it) : ""}
   </div>`;
@@ -1657,7 +1667,7 @@ function pendingRowHtml(it, on, tick, exists){
       </div>
       ${read}${act}${open}
       <span class="pg">${esc(label)}</span>
-      <span class="caret">›</span>
+      <span class="caret" title="${isOpen?"Hide details":"Show details"}">${isOpen ? "▴ hide" : "▾ details"}</span>
     </div>
     ${isOpen ? libDetailHtml(it) : ""}
   </div>`;

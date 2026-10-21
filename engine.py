@@ -126,7 +126,7 @@ def http_json(url: str, timeout: int = 60):
     """GET a URL and return parsed JSON. No retry here — callers that can
     recover (the resolver, the per-item probe) do their own attempts."""
 
-    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/2.1.2"})
+    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/2.1.3"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.load(r)
 
@@ -153,6 +153,7 @@ class Job:
     retries: int = 0
     next_try_at: float = 0.0   # retry ladder: earliest time a retry may run
     fatal: bool = False        # a permanent failure — never retried
+    desc: str = ""             # the source's own blurb, if it had a useful one
     created: float = field(default_factory=time.time)
     updated: float = field(default_factory=time.time)
 
@@ -178,6 +179,9 @@ class Job:
             "scoped_query": self.scoped_query,
             "dir": self.dir,
             "series": self.series,
+            # The source's own blurb, so the queue card can say what this is
+            # rather than only what it is called.
+            "desc": self.desc,
             # First real identifier, so the UI can show the item's cover without
             # a second request. Falls back to the source URL for jobs whose
             # items have not resolved yet.
@@ -624,8 +628,16 @@ class Resolver:
                         return {"identifier": ident, "skip": True,
                                 "reason": f"no PDF/CBZ scan ({fmts or 'none'})",
                                 "title": m.get("metadata", {}).get("title", ident)}
+                    md = m.get("metadata") or {}
+                    if not job.desc:
+                        # First useful blurb wins: a collection's rows usually
+                        # share one description, and repeating it per item is
+                        # noise.
+                        job.desc = useful_desc(plain_text(md.get("description")),
+                                               md.get("title") or job.label)
                     entry = {
                         "identifier": ident,
+                        "desc": job.desc,
                         "title": m.get("metadata", {}).get("title", ident),
                         "file": f["name"],
                         "format": f.get("format"),

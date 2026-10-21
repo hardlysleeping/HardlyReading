@@ -3,6 +3,28 @@
 Notable changes to HardlyReading. Versions are tagged on GitHub with matching
 release notes.
 
+## [2.1.3] — 2026-10-20
+
+### Added
+
+- **Descriptions in the queue and the library.** A queue card carries the
+  source's own blurb under its title (two lines until the card is open); an
+  expanded library row shows it above its facts. The job keeps the first useful
+  description it resolves and passes it down to its library rows.
+
+### Changed
+
+- "Show in folder" is **gone**, along with its route. It opened a file-manager
+  window on every click, and one click too many buried the desktop.
+- Expanding is now something you can see: queue cards say **show files** /
+  **hide files**, and library rows carry a **▾ details / ▴ hide** toggle pinned
+  to the right edge instead of a bare chevron sitting next to the status word.
+- Queue descriptions are 12 px on a brighter grey so they read as text.
+- A row's State reads in plain words ("ready to download", "download failed")
+  rather than the internal queue status, and a row with no file no longer claims
+  a format of "pending".
+- The expanded library panel no longer repeats the row's Read button.
+
 ## [2.1.2] — 2026-10-20
 
 ### Fixed
@@ -308,6 +330,7 @@ First release.
 - Built-in CBZ / CBR / PDF reader; CBR needs `unrar`, `bsdtar` or `7z`
 - Cross-platform launcher that finds `aria2c` and opens the browser
 
+[2.1.3]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.1.3
 [2.1.2]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.1.2
 [2.1.1]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.1.1
 [2.1.0]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.1.0
