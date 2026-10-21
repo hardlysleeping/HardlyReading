@@ -3,7 +3,26 @@
 Notable changes to HardlyReading. Versions are tagged on GitHub with matching
 release notes.
 
-## [2.2.1] — 2026-10-20
+## [2.3.0] — 2026-10-20
+
+### Added
+
+- **Grid view.** A list/grid switch in the library, remembered per browser.
+  Grid draws posters with the cover, a star, a read shortcut, the title and
+  either a progress bar or "unread"/"finished". Covers are requested at 220 px
+  there instead of the 96 px a list row needs.
+- **Filter chips**: All, ★ Favourites, Reading, Unread, Finished, Not downloaded.
+  They stack with the text filter, and the pager counts the filtered set.
+- **Favourites.** A star on every row and grid card, stored in SQLite by book
+  key — the same key reading progress uses, so a favourite survives a rescan,
+  a re-download and a restart.
+
+### Changed
+
+- `/api/thumb` takes a width (`w`), clamped to 64–320 px, so one endpoint serves
+  both the 34 px list row and the 220 px grid tile.
+
+
 
 ### Added
 

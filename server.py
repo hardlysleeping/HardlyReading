@@ -45,7 +45,7 @@ ENGINE = engine.Engine()
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "HardlyReading/2.2.1"
+    server_version = "HardlyReading/2.3.0"
 
     def log_message(self, fmt, *args):
         pass  # quiet
@@ -403,7 +403,13 @@ class Handler(BaseHTTPRequestHandler):
             if not target.startswith(os.path.realpath(d)):
                 return self._send(400, {"error": "bad path"})
             try:
-                blob = engine.page_thumb(target)
+                # Grid view asks for a wider image than a list row does; clamp
+                # so a hand-written query cannot ask for a 20000px render.
+                try:
+                    w = int((qs.get("w") or ["96"])[0])
+                except ValueError:
+                    w = 96
+                blob = engine.page_thumb(target, max(64, min(320, w)))
             except Exception:
                 blob = b""
             if not blob:
@@ -490,6 +496,9 @@ class Handler(BaseHTTPRequestHandler):
                     entry={"outname": f["name"],
                            "desc": known_desc.get(f["name"].lower(), "")},
                 ))
+            favs = ENGINE.favourites()
+            for it in items:
+                it["fav"] = it.get("key") in favs
             items.sort(key=lambda x: (x["series"].lower(), x["name"] or ""))
             # A missing folder is why a library can look empty when files do
             # exist elsewhere; the UI says so instead of "nothing downloaded".
@@ -639,6 +648,13 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, ENGINE.clear_history())
             except Exception as e:  # noqa: BLE001
                 return self._send(500, {"error": str(e)})
+
+        if path == "/api/favourite":
+            key = (body.get("key") or "").strip()
+            if not key:
+                return self._send(400, {"error": "no key"})
+            ENGINE.set_favourite(key, bool(body.get("on")))
+            return self._send(200, {"key": key, "on": bool(body.get("on"))})
 
         if path == "/api/delete":
             try:

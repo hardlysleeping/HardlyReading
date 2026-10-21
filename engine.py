@@ -126,7 +126,7 @@ def http_json(url: str, timeout: int = 60):
     """GET a URL and return parsed JSON. No retry here — callers that can
     recover (the resolver, the per-item probe) do their own attempts."""
 
-    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/2.2.1"})
+    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/2.3.0"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.load(r)
 
@@ -722,6 +722,31 @@ class Engine:
         # without the user re-adding anything.
         threading.Thread(target=self.backfill_descriptions, daemon=True).start()
 
+    def favourites(self) -> set:
+        """Book keys marked as favourites."""
+        try:
+            conn = self._db()
+            if not conn:
+                return set()
+            return {r[0] for r in conn.execute("SELECT book FROM favourites")}
+        except Exception:
+            return set()
+
+    def set_favourite(self, book_key: str, on: bool):
+        try:
+            conn = self._db()
+            if not conn:
+                return
+            with self._lock_db:
+                if on:
+                    conn.execute("INSERT OR REPLACE INTO favourites (book, added) "
+                                 "VALUES (?,?)", (book_key, time.time()))
+                else:
+                    conn.execute("DELETE FROM favourites WHERE book=?", (book_key,))
+                conn.commit()
+        except Exception:
+            pass
+
     def cached_desc(self, ident: str, max_age: float = 7 * 86400):
         """A description from the index, or None when it is absent or stale.
 
@@ -854,6 +879,11 @@ class Engine:
             # Descriptions live in the same index: they are metadata that never
             # changes, and re-asking archive.org for every row on every open is
             # both slow and rude.
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS favourites (
+                    book    TEXT PRIMARY KEY,
+                    added   REAL NOT NULL
+                )""")
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS descriptions (
                     ident   TEXT PRIMARY KEY,

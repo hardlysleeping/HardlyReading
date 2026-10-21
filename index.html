@@ -446,6 +446,49 @@
   .libtick{width:18px;height:18px;flex:none;border-radius:50%;border:1px solid var(--line);
     display:grid;place-items:center;font-size:11px;color:transparent;background:#0b0d11}
   .libtick.on{background:var(--accent);border-color:var(--accent);color:#fff}
+  /* View switch and filter chips: small, quiet, remembered per browser. */
+  .vswitch{display:inline-flex;border:1px solid var(--line);border-radius:8px;
+    overflow:hidden;flex:none}
+  .vswitch button{background:transparent;border:0;color:var(--dim);
+    padding:5px 9px;font-size:12px;cursor:pointer;line-height:1}
+  .vswitch button.on{background:var(--panel2);color:var(--text)}
+  .vswitch button+button{border-left:1px solid var(--line)}
+  .chips{display:flex;gap:6px;flex-wrap:wrap;margin:10px 0 2px}
+  .chips button{background:transparent;border:1px solid var(--line);
+    color:var(--dim);border-radius:999px;padding:4px 11px;font-size:11.5px;
+    cursor:pointer;line-height:1.2}
+  .chips button:hover{color:var(--text);border-color:rgba(255,255,255,.22)}
+  .chips button.on{background:rgba(79,140,255,.14);border-color:var(--accent);
+    color:var(--text)}
+  /* Star: a toggle, so it reads as state rather than as another action. */
+  .star{background:transparent;border:0;cursor:pointer;padding:2px 4px;
+    font-size:14px;line-height:1;color:var(--dim)}
+  .star.on{color:#f0b429}
+  .star:hover{color:#f0b429}
+  /* Grid: posters, four to eight per row depending on the window. */
+  .libgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));
+    gap:16px;margin-top:14px}
+  .gcard{cursor:pointer}
+  .gcover{position:relative;border-radius:8px;overflow:hidden;
+    border:1px solid var(--line);background:var(--panel2);aspect-ratio:3/4}
+  .gcard:hover .gcover{border-color:var(--accent)}
+  .gcov{width:100%;height:100%;object-fit:cover;display:block}
+  .gcov.none{display:grid;place-items:center;font-size:11px;color:var(--dim)}
+  .gcard .star{position:absolute;top:4px;right:4px;background:rgba(10,12,16,.66);
+    border-radius:6px;font-size:13px}
+  .gread{position:absolute;left:4px;bottom:4px;background:rgba(10,12,16,.72);
+    border:1px solid var(--line);color:var(--text);border-radius:6px;
+    padding:2px 8px;font-size:11px;cursor:pointer}
+  .gfin{position:absolute;right:4px;bottom:4px;color:var(--ok);font-size:12px}
+  .gmeta{padding:7px 2px 0}
+  .gnm{display:block;font-size:11.5px;line-height:1.35;color:var(--text);
+    overflow:hidden;text-overflow:ellipsis;display:-webkit-box;
+    -webkit-line-clamp:2;-webkit-box-orient:vertical;min-height:2.7em}
+  .gtrack{height:4px;border-radius:2px;background:var(--line);overflow:hidden;
+    margin-top:5px}
+  .gtrack i{display:block;height:100%;background:var(--accent)}
+  .gpct{font-size:10.5px;color:var(--dim)}
+  .gcard.done .gnm{color:var(--dim)}
   .libgroup{font-size:12px;font-weight:700;color:var(--dim);
     text-transform:uppercase;letter-spacing:.06em;margin:16px 0 8px}
   .libgroup:first-child{margin-top:4px}
@@ -611,9 +654,21 @@ Support the Archive</a>
       <div class="row" style="margin-top:0;justify-content:space-between">
         <h2 style="margin:0">Your library</h2>
         <div class="row" style="margin:0;gap:8px">
-          <input type="search" id="libQ" placeholder="Filter…" style="max-width:240px">
+          <input type="search" id="libQ" placeholder="Filter…" style="max-width:220px">
+          <div class="vswitch" id="libView">
+            <button data-view="list" class="on" title="List view">☰</button>
+            <button data-view="grid" title="Grid view">▦</button>
+          </div>
           <button class="btn ghost sm" id="libSelBtn">Select</button>
         </div>
+      </div>
+      <div class="chips" id="libChips">
+        <button data-chip="all" class="on">All</button>
+        <button data-chip="fav">★ Favourites</button>
+        <button data-chip="reading">Reading</button>
+        <button data-chip="unread">Unread</button>
+        <button data-chip="finished">Finished</button>
+        <button data-chip="pending">Not downloaded</button>
       </div>
       <div class="selbar" id="libSelBar" hidden>
         <span id="libSelCount">0 selected</span>
@@ -1015,6 +1070,20 @@ document.addEventListener("click", async (e)=>{
     return;
   }
   // Library row detail actions.
+  const fav = e.target.closest("[data-fav]");
+  if(fav){
+    const key = fav.dataset.fav;
+    const it = libItems.find(x => x.key === key);
+    const on = !(it && it.fav);
+    try{
+      await api("/api/favourite", {method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({key, on})});
+      if(it) it.fav = on;
+      renderLibrary();
+    }catch(err){ toast(err.message); }
+    return;
+  }
   const lread = e.target.closest("[data-read]");
   if(lread){
     const it = libItems.find(x => x.key === lread.dataset.read);
@@ -1593,11 +1662,28 @@ const libSelected = new Set();   // keys of rows ticked in select mode
 
 let libRows = [];   // the filtered list the pager counts
 
+let libView = localStorage.getItem("hr.libView") === "grid" ? "grid" : "list";
+let libChip = localStorage.getItem("hr.libChip") || "all";
+
+function matchesChip(i, chip){
+  if(chip === "fav")      return !!i.fav;
+  if(chip === "reading")  return !i.finished && (i.progress || 0) > 0 && i.downloaded;
+  if(chip === "unread")   return i.downloaded && !i.progress && !i.finished;
+  if(chip === "finished") return !!i.finished;
+  if(chip === "pending")  return !i.downloaded;
+  return true;
+}
+
 function renderLibrary(){
   const q = ($("libQ").value || "").trim().toLowerCase();
-  const shown = q
-    ? libItems.filter(i => ((i.series||"") + " " + (i.name||"")).toLowerCase().includes(q))
-    : libItems;
+  // Text filter and chip both narrow the same list; the pager counts what is
+  // left, so "showing 1-10 of 3" cannot happen.
+  const shown = libItems.filter(i => {
+    if(!matchesChip(i, libChip)) return false;
+    if(!q) return true;
+    return ((i.series||"") + " " + (i.name||"") + " " + (i.desc||""))
+             .toLowerCase().includes(q);
+  });
   libRows = shown;
 
   $("libSelBtn").textContent = libSelectMode ? "Done" : "Select";
@@ -1636,13 +1722,26 @@ function renderLibrary(){
   const groups = {};
   for(const it of slice){ (groups[it.series] = groups[it.series] || []).push(it); }
 
-  $("libList").innerHTML = Object.keys(groups).sort().map(se => `
-    <div class="libgroup">${esc(se)}</div>
-    ${groups[se].map(it => rowHtml(it)).join("")}
-  `).join("");
+  if(libView === "grid"){
+    // A grid is for browsing by cover; series headers would only interrupt it.
+    $("libList").innerHTML = `<div class="libgrid">${slice.map(gridCard).join("")}</div>`;
+  } else {
+    $("libList").innerHTML = Object.keys(groups).sort().map(se => `
+      <div class="libgroup">${esc(se)}</div>
+      ${groups[se].map(it => rowHtml(it)).join("")}
+    `).join("");
+  }
 
   if($("libPager")) $("libPager").innerHTML = pagerBar("library", shown.length, "files");
 
+  $("libList").querySelectorAll(".gcard").forEach(el=>{
+    el.onclick = (ev)=>{
+      if(ev.target.closest("button")) return;
+      // In grid view there is no row to expand, so a click reads the book.
+      const it = libItems.find(x => x.key === el.dataset.key);
+      if(it && it.downloaded) openBook(it);
+    };
+  });
   $("libList").querySelectorAll(".rfile").forEach(el => {
     el.onclick = (ev) => {
       if(ev.target.closest("button, a")) return;   // row actions handle themselves
@@ -1736,6 +1835,37 @@ async function loadRowDesc(it){
       renderLibrary();
     }
   }catch(e){ /* a description is a nicety; never break the list for it */ }
+}
+
+function starBtn(it){
+  return `<button class="star${it.fav?" on":""}" data-fav="${esc(it.key)}"
+            title="${it.fav?"Remove from favourites":"Add to favourites"}"
+            aria-label="Favourite">${it.fav ? "★" : "☆"}</button>`;
+}
+
+/* Grid view: covers are the point, so the card is a poster with a title, a
+   progress bar and the two things you act on (read, star). */
+function gridCard(it){
+  const pct = it.pages ? Math.min(100, Math.round(((it.progress||0)/it.pages)*100)) : 0;
+  const cover = (it.downloaded && it.readable)
+    ? `<img class="gcov" loading="lazy" alt=""
+             src="/api/thumb?w=220&id=${encodeURIComponent(it.job)}&file=${encodeURIComponent(it.name)}"
+             onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'gcov none',textContent:'no cover'}))">`
+    : `<span class="gcov none">${it.kind === "pdf" ? "PDF" : "not downloaded"}</span>`;
+  return `<div class="gcard${it.finished?" done":""}" data-key="${esc(it.key)}">
+    <div class="gcover">${cover}${starBtn(it)}
+      ${it.downloaded ? `<button class="gread" data-read="${esc(it.key)}"
+          title="Read">▸</button>` : ""}
+      ${it.finished ? `<span class="gfin">✓</span>` : ""}
+    </div>
+    <div class="gmeta">
+      <span class="gnm" title="${esc(it.name)}">${esc(it.name)}</span>
+      ${it.progress && !it.finished
+        ? `<div class="gtrack"><i style="width:${pct}%"></i></div>
+           <span class="gpct">${pct}%</span>`
+        : `<span class="gpct">${it.finished ? "finished" : (it.downloaded ? "unread" : "not downloaded")}</span>`}
+    </div>
+  </div>`;
 }
 
 function rowHtml(it){
@@ -1878,6 +2008,26 @@ $("libDelSel").onclick = async ()=>{
 };
 
 $("libQ").oninput = renderLibrary;
+
+$("libView").querySelectorAll("button").forEach(b=>{
+  b.classList.toggle("on", b.dataset.view === libView);
+  b.onclick = ()=>{
+    libView = b.dataset.view;
+    localStorage.setItem("hr.libView", libView);
+    $("libView").querySelectorAll("button").forEach(x=>x.classList.toggle("on", x===b));
+    renderLibrary();
+  };
+});
+
+$("libChips").querySelectorAll("button").forEach(b=>{
+  b.classList.toggle("on", b.dataset.chip === libChip);
+  b.onclick = ()=>{
+    libChip = b.dataset.chip;
+    localStorage.setItem("hr.libChip", libChip);
+    $("libChips").querySelectorAll("button").forEach(x=>x.classList.toggle("on", x===b));
+    renderLibrary();
+  };
+});
 
 /* ---------- reader (ultra-basic preview) ---------- */
 let readerState = null;
