@@ -126,7 +126,7 @@ def http_json(url: str, timeout: int = 60):
     """GET a URL and return parsed JSON. No retry here — callers that can
     recover (the resolver, the per-item probe) do their own attempts."""
 
-    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/2.4.1"})
+    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/2.4.2"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.load(r)
 
@@ -378,12 +378,29 @@ def search_page(query: str, rows: int = 24, page: int = 1,
     if sort:
         params.append(("sort[]", sort))
     url = SEARCH_API + "?" + urllib.parse.urlencode(params)
-    resp = http_json(url)["response"]
+    payload = http_json(url)
+    if "response" not in payload:
+        # archive.org refuses pages past its 10,000-result deep-paging limit
+        # rather than returning an empty page. Fall back to the first page and
+        # say so, instead of surfacing a bare "'response'" to the UI.
+        msg = str(payload.get("error") or "")
+        params = [(k, v) for k, v in params if k != "page"] + [("page", "1")]
+        payload = http_json(SEARCH_API + "?" + urllib.parse.urlencode(params))
+        # The results below are page 1, so say page 1 rather than echoing the
+        # page that was refused.
+        page = 1
+        deep_paging = True
+        if "response" not in payload:
+            return {"numFound": 0, "start": 0, "page": 1, "scoped_query": q,
+                    "docs": [], "filtered": "all", "visible": 0,
+                    "deep_paging": True, "note": msg[:200]}
+    resp = payload["response"]
     docs = resp.get("docs", [])
     return {
         "numFound": resp.get("numFound", 0),
         "start": resp.get("start", 0),
         "page": page,
+        "deep_paging": locals().get("deep_paging", False),
         "scoped_query": q,
         "docs": [{
             "identifier": d.get("identifier"),

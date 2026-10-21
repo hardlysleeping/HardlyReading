@@ -45,7 +45,7 @@ ENGINE = engine.Engine()
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "HardlyReading/2.4.1"
+    server_version = "HardlyReading/2.4.2"
 
     def log_message(self, fmt, *args):
         pass  # quiet
@@ -281,7 +281,9 @@ class Handler(BaseHTTPRequestHandler):
                     rows = int((qs.get("rows") or ["24"])[0])
                 except ValueError:
                     rows = 24
-                rows = max(10, min(100, rows))
+                # Honour what was asked for; the UI offers 10/25/50/100 but a
+                # caller asking for 3 should get 3, not 10.
+                rows = max(1, min(100, rows))
                 res = engine.search_documents(query, page=page, rows=rows,
                                               kind=filt)
                 res["rows"] = rows

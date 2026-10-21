@@ -3,7 +3,18 @@
 Notable changes to HardlyReading. Versions are tagged on GitHub with matching
 release notes.
 
-## [2.4.1] — 2026-10-20
+## [2.4.2] — 2026-10-20
+
+### Fixed
+
+- **Deep paging returned `{"error": "'response'"}`.** archive.org refuses pages
+  beyond its 10,000-result limit instead of sending an empty page. The search now
+  falls back to page 1, says `page: 1` and `deep_paging: true` instead of echoing
+  the refused page or surfacing a raw KeyError.
+- `rows` was clamped to a minimum of 10, so a caller asking for 3 got 10. It
+  honours 1–100 now.
+
+
 
 ### Fixed
 
