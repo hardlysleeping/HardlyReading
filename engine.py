@@ -126,7 +126,7 @@ def http_json(url: str, timeout: int = 60):
     """GET a URL and return parsed JSON. No retry here — callers that can
     recover (the resolver, the per-item probe) do their own attempts."""
 
-    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/2.1.1"})
+    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/2.1.2"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.load(r)
 
@@ -309,6 +309,31 @@ def plain_text(value, limit: int = 400) -> str:
     return text
 
 
+def _norm_words(text: str) -> str:
+    """Words only, lowercased — for comparing a description with its title."""
+    return re.sub(r"[^a-z0-9]+", " ", (text or "").lower()).strip()
+
+
+def useful_desc(desc: str, title: str) -> str:
+    """A description worth showing, or "".
+
+    Most archive.org collections repeat their own title in the description
+    field, so a card ends up with the same words twice and no information. If
+    the description is the title again (or a prefix of it, or two words long)
+    it earns no space on the card.
+    """
+    d, t = _norm_words(desc), _norm_words(title)
+    if not d:
+        return ""
+    if not t:
+        return desc
+    if d == t or d in t or t in d:
+        return ""
+    if len(d.split()) < 4:
+        return ""          # "Im sure", "cbr+pdf" — noise, not a description
+    return desc
+
+
 def search_page(query: str, rows: int = 24, page: int = 1,
                 mediatype: str = "texts", sort: str = "downloads desc",
                 title_only: bool = True, collections_only: bool = False):
@@ -352,7 +377,13 @@ def search_page(query: str, rows: int = 24, page: int = 1,
             "downloads": d.get("downloads"),
             "creator": d.get("creator") if isinstance(d.get("creator"), str)
                        else (d.get("creator") or [""])[0],
-            "desc": plain_text(d.get("description")),
+            # A blurb that only repeats the title reads as a rendering bug, so
+            # it is dropped before it reaches the card.
+            "desc": useful_desc(
+                plain_text(d.get("description")),
+                (d.get("title") or [d.get("identifier")] or [""])[0]
+                if isinstance(d.get("title"), list)
+                else (d.get("title") or d.get("identifier") or "")),
             "thumb": f"https://archive.org/services/img/{d.get('identifier')}",
         } for d in docs],
     }

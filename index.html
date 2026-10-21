@@ -200,11 +200,16 @@
   .res .st.fail{color:var(--err);border-color:rgba(239,91,91,.45)}
   .res .st.off{color:var(--dim)}
   /* Two lines by default so a long blurb cannot push the grid out of shape;
-     clicking the text expands it in place. */
-  .res .d{margin-top:6px;font-size:11.5px;line-height:1.45;color:var(--dim);
+     clicking the text expands it in place. Sized and coloured to be read, not
+     to be dim background: at 11.5px dim grey it was invisible at card width. */
+  .res .d{margin-top:7px;font-size:12.5px;line-height:1.5;color:#d3dae8;
     display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;
-    overflow:hidden;cursor:pointer}
+    overflow:hidden;cursor:pointer;padding-top:7px;
+    border-top:1px solid rgba(255,255,255,.06)}
+  .res .d:hover{color:var(--text)}
   .res.expand .d{-webkit-line-clamp:unset;display:block}
+  /* A card with no description keeps its height so the grid rows line up. */
+  .res .d.empty{visibility:hidden}
   .res .acts{display:flex;gap:6px;padding:0 9px 9px}
   .res .acts button{flex:1;background:var(--panel);border:1px solid var(--line);
     color:var(--dim);border-radius:7px;font-size:11px;padding:5px 0;cursor:pointer}

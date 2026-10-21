@@ -3,6 +3,19 @@
 Notable changes to HardlyReading. Versions are tagged on GitHub with matching
 release notes.
 
+## [2.1.2] — 2026-10-20
+
+### Fixed
+
+- **Search descriptions were there but did not read as descriptions.** Most
+  archive.org collections type their own title into the description field, so
+  cards showed the same words twice, and the real blurbs were 11.5 px dim grey
+  clamped to two lines — technically present, practically invisible. A
+  description that only repeats the title (or is under four words) is now
+  dropped, and the remaining ones are brighter, larger, and set off by a rule so
+  they read as a caption rather than as more metadata. Measured on a live
+  search: 25 cards, 15 descriptions shown, none of them a repeat of its title.
+
 ## [2.1.1] — 2026-10-20
 
 ### Added
@@ -295,6 +308,7 @@ First release.
 - Built-in CBZ / CBR / PDF reader; CBR needs `unrar`, `bsdtar` or `7z`
 - Cross-platform launcher that finds `aria2c` and opens the browser
 
+[2.1.2]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.1.2
 [2.1.1]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.1.1
 [2.1.0]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.1.0
 [2.0.2]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.0.2
