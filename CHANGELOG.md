@@ -3,6 +3,14 @@
 Notable changes to HardlyReading. Versions are tagged on GitHub with matching
 release notes.
 
+## [2.0.2] — 2026-10-20
+
+### Changed
+
+- The Internet Archive support link is a small quiet pill — dim 11.5 px text, no
+  accent border, lifting only on hover — so it reads as thanks rather than as
+  the next step. Label shortened to "Support the Archive".
+
 ## [2.0.1] — 2026-10-20
 
 ### Fixed
@@ -240,6 +248,7 @@ First release.
 - Built-in CBZ / CBR / PDF reader; CBR needs `unrar`, `bsdtar` or `7z`
 - Cross-platform launcher that finds `aria2c` and opens the browser
 
+[2.0.2]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.0.2
 [2.0.1]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.0.1
 [2.0.0]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.0.0
 [1.9.0]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v1.9.0
