@@ -182,7 +182,10 @@
     border-radius:3px;transition:width .4s ease}
 
   /* results grid */
-  .results{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-top:14px}
+  /* Wide enough for a readable title and two lines of blurb: at 150px the
+     cards were squashed seven to a row and nothing inside them could breathe. */
+  .results{display:grid;grid-template-columns:repeat(auto-fill,minmax(215px,1fr));
+    gap:16px;margin-top:16px}
   .res{position:relative;background:var(--panel2);border:1px solid var(--line);border-radius:10px;
     overflow:hidden;cursor:pointer;transition:border-color .15s,transform .1s}
   .res:hover{border-color:var(--accent);transform:translateY(-1px)}
@@ -207,6 +210,11 @@
     overflow:hidden;cursor:pointer;padding-top:7px;
     border-top:1px solid rgba(255,255,255,.06)}
   .res .d:hover{color:var(--text)}
+  /* A labelled arrow, because a clamp with no control does not look expandable. */
+  .res .dmore{margin-top:5px;font-size:11px;color:var(--accent2);cursor:pointer;
+    user-select:none;letter-spacing:.02em}
+  .res .dmore:hover{text-decoration:underline}
+  .res.expand .dmore::after{}
   .res.expand .d{-webkit-line-clamp:unset;display:block}
   /* A card with no description keeps its height so the grid rows line up. */
   .res .d.empty{visibility:hidden}
@@ -215,11 +223,11 @@
     color:var(--dim);border-radius:7px;font-size:11px;padding:5px 0;cursor:pointer}
   .res .acts button:hover{color:var(--text);border-color:var(--accent)}
   .res .acts button.danger:hover{color:var(--err);border-color:var(--err)}
-  .res img{width:100%;height:110px;object-fit:cover;display:block;background:#0b0d11}
-  .res .body{padding:9px 10px 11px}
-  .res .t{font-size:12.5px;font-weight:600;line-height:1.35;
+  .res img{width:100%;height:150px;object-fit:cover;display:block;background:#0b0d11}
+  .res .body{padding:11px 12px 13px}
+  .res .t{font-size:13.5px;font-weight:600;line-height:1.4;
     display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
-  .res .y{font-size:11px;color:var(--dim);margin-top:3px}
+  .res .y{font-size:11.5px;color:var(--dim);margin-top:4px}
 
   .empty{color:var(--dim);font-size:13.5px;padding:26px 0;text-align:center;line-height:1.6}
   .empty b{display:block;color:var(--text);opacity:.85;font-weight:550;font-size:14px}
@@ -342,6 +350,8 @@
     background:var(--panel2);border:1px solid var(--line);border-radius:9px;
     margin-bottom:8px;cursor:pointer}
   .rfile:hover{border-color:var(--accent)}
+  .rfile .rnl{display:block;font-size:11.5px;color:#aab4c6;margin-top:3px;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:60ch}
   .rfile .nm{display:block;font-size:13.5px;overflow:hidden;
     text-overflow:ellipsis;white-space:nowrap}
   .rlinfo{flex:1;min-width:0}
@@ -363,9 +373,13 @@
   .rfile.open{border-color:rgba(79,140,255,.5);border-bottom-left-radius:0;
     border-bottom-right-radius:0}
   /* A labelled toggle: a bare chevron does not read as "there is more here". */
+  /* A bordered pill, not bare text: it has to look like something you press. */
   .caret{color:var(--accent2);font-size:11px;line-height:1;margin-left:auto;
-    flex:none;white-space:nowrap;cursor:pointer;padding-left:10px}
-  .rfile .pg + .caret{margin-left:10px}
+    flex:none;white-space:nowrap;cursor:pointer;
+    border:1px solid rgba(79,140,255,.35);border-radius:6px;
+    padding:4px 8px;background:rgba(79,140,255,.07)}
+  .caret:hover{background:rgba(79,140,255,.16);color:var(--text)}
+  .rfile .pg + .caret{margin-left:12px}
   .rfile:hover .caret{text-decoration:underline}
   .rfile.open .caret{color:var(--dim)}
   .libdetail{border:1px solid rgba(79,140,255,.5);border-top:none;
@@ -846,7 +860,7 @@ function renderJobs(st){
       <div>
         <div class="title">${esc(j.series || j.label)}</div>
         ${j.desc ? `<div class="jdesc${expandedJobs.has(j.id)?" open":""}">${esc(j.desc)}</div>` : ""}
-        <div class="jmore">${expandedJobs.has(j.id) ? "hide files" : "show files"}</div>
+        <div class="jmore">${expandedJobs.has(j.id) ? "▴ hide files" : "▾ show files"}</div>
         <div class="meta">${bits.map(esc).join(" · ")}</div>
         ${scoped}
         ${bar}
@@ -1281,7 +1295,8 @@ function renderCards(docs){
       <div class="body">
         <div class="t">${esc(d.title)}</div>
         <div class="y${isColl?" coll":""}">${esc(y)}</div>
-        ${d.desc ? `<div class="d" title="Click to show the whole description">${esc(d.desc)}</div>` : ""}
+        ${d.desc ? `<div class="d" title="Click the arrow for the whole description">${esc(d.desc)}</div>
+          <div class="dmore" title="Show the whole description">▾ more</div>` : ""}
       </div>
       ${acts}
     </div>`;
@@ -1292,7 +1307,12 @@ function renderCards(docs){
       if(e.target.closest("button")) return;   // action buttons handle their own click
       // The blurb is its own control: expand it instead of toggling selection,
       // which is what clicking anywhere else on the card does.
-      if(e.target.closest(".d")){ el.classList.toggle("expand"); return; }
+      if(e.target.closest(".d, .dmore")){
+        el.classList.toggle("expand");
+        const m = el.querySelector(".dmore");
+        if(m) m.textContent = el.classList.contains("expand") ? "▴ less" : "▾ more";
+        return;
+      }
       toggleSelect(el.dataset.id, el);
     };
   });
@@ -1617,6 +1637,7 @@ function rowHtml(it){
       ${cover}
       <div class="rlinfo">
         <span class="nm">${esc(it.name)}</span>
+        ${it.desc ? `<span class="rnl">${esc(it.desc)}</span>` : ""}
         ${bar}
       </div>
       ${badge}

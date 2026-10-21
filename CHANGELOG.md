@@ -3,6 +3,25 @@
 Notable changes to HardlyReading. Versions are tagged on GitHub with matching
 release notes.
 
+## [2.1.5] — 2026-10-20
+
+### Changed
+
+- **Search grid no longer squashed.** Cards were 150 px wide, seven to a row,
+  with nowhere for a title or a blurb to sit. They are 215 px minimum now (237 px
+  at a normal window), the cover is taller, and the text inside has room.
+- **Expanding is discoverable.** A `▾ more` arrow sits under every description
+  and flips to `▴ less`; the queue's toggle reads `▾ show files` / `▴ hide files`;
+  the library's `▾ details` is a bordered pill instead of bare text.
+- **Library rows show their description while collapsed**, not only when the row
+  is open.
+
+### Notes
+
+- A description still only appears where archive.org has one that says
+  something. Two books in a three-book library show none because their item's
+  description is literally its own title.
+
 ## [2.1.4] — 2026-10-20
 
 ### Fixed
@@ -340,6 +359,7 @@ First release.
 - Built-in CBZ / CBR / PDF reader; CBR needs `unrar`, `bsdtar` or `7z`
 - Cross-platform launcher that finds `aria2c` and opens the browser
 
+[2.1.5]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.1.5
 [2.1.4]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.1.4
 [2.1.3]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.1.3
 [2.1.2]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.1.2
