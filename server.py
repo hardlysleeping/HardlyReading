@@ -45,7 +45,7 @@ ENGINE = engine.Engine()
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "HardlyReading/2.2.0"
+    server_version = "HardlyReading/2.2.1"
 
     def log_message(self, fmt, *args):
         pass  # quiet
@@ -612,6 +612,21 @@ class Handler(BaseHTTPRequestHandler):
             if not ok:
                 return self._send(409, {"error": "that job cannot be reordered"})
             return self._send(200, {"ok": True})
+
+        if path == "/api/remove-many":
+            # Undo for a bulk add: removing a thousand jobs one request at a
+            # time is how a mistake becomes a hang.
+            ids = body.get("ids") or []
+            if not isinstance(ids, list):
+                return self._send(400, {"error": "ids must be a list"})
+            removed = 0
+            for jid in ids[:5000]:
+                try:
+                    ENGINE.remove(str(jid))
+                    removed += 1
+                except Exception:
+                    pass
+            return self._send(200, {"removed": removed, "asked": len(ids)})
 
         if path == "/api/remove":
             try:

@@ -1761,7 +1761,7 @@ function rowHtml(it){
   // Eager, not lazy: a lazy image inside a lazily-painted list can stay
   // unloaded long enough to look like a missing cover. A failure swaps in the
   // placeholder rather than hiding into an empty box.
-  const cover = (it.downloaded && it.readable && it.kind !== "pdf")
+  const cover = (it.downloaded && it.readable)
     ? `<img class="lcov" loading="eager" alt=""
              src="/api/thumb?id=${encodeURIComponent(it.job)}&file=${encodeURIComponent(it.name)}"
              onerror="this.outerHTML='<span class=&quot;lcov lcov-none&quot;></span>'">`

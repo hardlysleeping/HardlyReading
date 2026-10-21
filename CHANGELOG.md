@@ -3,7 +3,17 @@
 Notable changes to HardlyReading. Versions are tagged on GitHub with matching
 release notes.
 
-## [2.2.0] — 2026-10-20
+## [2.2.1] — 2026-10-20
+
+### Added
+
+- **PDFs get real covers in the library.** They used a "PDF" placeholder
+  because a PDF has no page list to read a first page out of. Page one is now
+  rendered with poppler's `pdftoppm` and cached like any other thumbnail.
+  Optional by design: the binary is not bundled, and without it the row keeps
+  its placeholder instead of showing a broken image.
+
+
 
 ### Changed
 

@@ -126,7 +126,7 @@ def http_json(url: str, timeout: int = 60):
     """GET a URL and return parsed JSON. No retry here — callers that can
     recover (the resolver, the per-item probe) do their own attempts."""
 
-    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/2.2.0"})
+    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/2.2.1"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.load(r)
 
@@ -2048,6 +2048,11 @@ def page_thumb(path: str, width: int = 96) -> bytes:
     if os.path.isfile(cache):
         with open(cache, "rb") as fh:
             return fh.read()
+    # A PDF has no page list to read, so render page one with poppler when it is
+    # installed. Without it the row keeps its placeholder rather than lying.
+    if path.lower().endswith(".pdf"):
+        return _pdf_thumb(path, cache, width)
+
     pages = comic_pages(path)
     if not pages:
         return b""
@@ -2076,6 +2081,56 @@ def page_thumb(path: str, width: int = 96) -> bytes:
     except OSError:
         pass
     return blob
+
+
+def _pdf_thumb(path: str, cache: str, width: int = 96) -> bytes:
+    """First page of a PDF as a small JPEG, via pdftoppm.
+
+    Optional by design: poppler is common on Linux and bundled by most package
+    managers, but it is not something this app installs, so a missing binary
+    just means no cover.
+    """
+    exe = shutil.which("pdftoppm")
+    if not exe:
+        return b""
+    out_root = cache[:-4] if cache.endswith(".jpg") else cache
+    try:
+        # Render straight into the cache directory, then fold the one page into
+        # the cached JPEG so the next call is a file read.
+        subprocess.run([exe, "-jpeg", "-f", "1", "-l", "1",
+                        "-scale-to", str(width * 3), path, out_root],
+                       check=True, timeout=30,
+                       stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        produced = next((os.path.join(os.path.dirname(out_root), f)
+                         for f in os.listdir(os.path.dirname(out_root) or ".")
+                         if f.startswith(os.path.basename(out_root))
+                         and f.endswith(".jpg")), "")
+        if not produced:
+            return b""
+        try:
+            from PIL import Image
+            with Image.open(produced) as im:
+                im = im.convert("RGB")
+                h = max(1, round(width * im.height / max(1, im.width)))
+                im = im.resize((width, h), Image.LANCZOS)
+                buf = io.BytesIO()
+                im.save(buf, "JPEG", quality=78)
+            blob = buf.getvalue()
+        finally:
+            try:
+                os.remove(produced)
+            except OSError:
+                pass
+        try:
+            tmp = cache + ".part"
+            with open(tmp, "wb") as fh:
+                fh.write(blob)
+            os.replace(tmp, cache)
+        except OSError:
+            pass
+        return blob
+    except Exception:
+        return b""
 
 
 def read_page(path: str, name: str):
