@@ -44,7 +44,7 @@ ENGINE = engine.Engine()
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "HardlyReading/2.0.0"
+    server_version = "HardlyReading/2.0.1"
 
     def log_message(self, fmt, *args):
         pass  # quiet
@@ -391,7 +391,9 @@ class Handler(BaseHTTPRequestHandler):
             # sitting in the download folder that no job accounts for.
             items, seen = self._library_from_jobs()
             for f in ENGINE.scan_folder():
-                p = os.path.join(ENGINE.settings["download_dir"], f["series"], f["name"])
+                # Same resolver as the download path, so an empty setting can
+                # never mean "the app directory" here either.
+                p = os.path.join(ENGINE.download_root(), f["series"], f["name"])
                 rp = os.path.realpath(p)
                 if rp in seen or not os.path.isfile(p):
                     continue
@@ -406,7 +408,7 @@ class Handler(BaseHTTPRequestHandler):
             items.sort(key=lambda x: (x["series"].lower(), x["name"] or ""))
             # A missing folder is why a library can look empty when files do
             # exist elsewhere; the UI says so instead of "nothing downloaded".
-            ddir = ENGINE.settings.get("download_dir") or ""
+            ddir = ENGINE.download_root()
             return self._send(200, {"items": items, "count": len(items),
                                     "dir": ddir,
                                     "dir_missing": not os.path.isdir(ddir)})

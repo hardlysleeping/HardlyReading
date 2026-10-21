@@ -3,6 +3,22 @@
 Notable changes to HardlyReading. Versions are tagged on GitHub with matching
 release notes.
 
+## [2.0.1] — 2026-10-20
+
+### Fixed
+
+- **Library scan resolved the folder twice, once wrongly.** `_library_from_jobs`
+  still joined `settings["download_dir"]` raw, so an empty value would have meant
+  the app directory for exactly the path that rebuilds the library. It uses
+  `Engine.download_root()` now, as does the `dir` reported to the UI.
+- **A failed PDF open left the previous reader's listeners installed.**
+  `pdfState` was set before pdf.js had loaded, so an exception skipped the
+  cleanup and a later close removed nothing. State is now claimed only once the
+  document is open, and every listener reference is cleared up front.
+- **A cover that failed to load went blank.** The error handler hid the image
+  inside a fixed-size box; it now swaps in the placeholder. Covers load eagerly
+  so a lazy list cannot leave an unloaded slot that looks like a missing cover.
+
 ## [2.0.0] — 2026-10-20
 
 ### Added
@@ -224,6 +240,7 @@ First release.
 - Built-in CBZ / CBR / PDF reader; CBR needs `unrar`, `bsdtar` or `7z`
 - Cross-platform launcher that finds `aria2c` and opens the browser
 
+[2.0.1]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.0.1
 [2.0.0]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.0.0
 [1.9.0]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v1.9.0
 [1.8.0]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v1.8.0

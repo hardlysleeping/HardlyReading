@@ -1450,11 +1450,14 @@ function rowHtml(it){
   const fin = it.finished ? " done" : "";
   // Page 0, downscaled server-side and cached: a real cover without shipping a
   // megabyte of scan per row.
+  // Eager, not lazy: a lazy image inside a lazily-painted list can stay
+  // unloaded long enough to look like a missing cover. A failure swaps in the
+  // placeholder rather than hiding into an empty box.
   const cover = (it.downloaded && it.readable && it.kind !== "pdf")
-    ? `<img class="lcov" loading="lazy" alt=""
+    ? `<img class="lcov" loading="eager" alt=""
              src="/api/thumb?id=${encodeURIComponent(it.job)}&file=${encodeURIComponent(it.name)}"
-             onerror="this.style.visibility='hidden'">`
-    : `<span class="lcov lcov-none" title="${it.kind === "pdf" ? "PDF" : ""}">PDF</span>`;
+             onerror="this.outerHTML='<span class=&quot;lcov lcov-none&quot;></span>'">`
+    : `<span class="lcov lcov-none" title="${it.kind === "pdf" ? "PDF" : ""}">${it.kind === "pdf" ? "PDF" : ""}</span>`;
   return `<div class="rfile${it.readable?"":" dis"}${on}${fin}" data-key="${esc(it.key)}"
                data-job="${esc(it.job)}" data-name="${esc(it.name)}">
     ${tick}
@@ -1625,6 +1628,10 @@ let pdfZoomKeys = null;  // - / + / 0
 let pdfResize = null;    // window resize redraw
 
 async function openPdf(item, wrap, qs){
+  // Start from a clean slate: if the import or getDocument throws below, a
+  // later hideReader must not try to remove handlers from a previous session
+  // (or leave this one's installed against a dead state).
+  pdfKeys = null; pdfZoomKeys = null; pdfResize = null;
   wrap.innerHTML = `
     <div class="rbar">
       ${brandHtml()}
@@ -1645,19 +1652,22 @@ async function openPdf(item, wrap, qs){
 
   const state = { page: Math.max(0, item.progress || 0), total: 0, doc: null,
                   busy: false, item, zoom: 1 };
-  pdfState = state;
 
   try{
     const pdfjs = await import("/vendor/pdf.min.mjs");
     pdfjs.GlobalWorkerOptions.workerSrc = "/vendor/pdf.worker.min.mjs";
     state.doc = await pdfjs.getDocument({ url: "/api/book?" + qs }).promise;
   }catch(e){
+    // Nothing was installed, so leave pdfState unset: hideReader then has
+    // nothing stale to remove, and the next open starts clean.
+    pdfState = null;
     const el = $("rpdfpage");
     if(el) el.textContent = "could not open";
     toast("PDF failed to open: " + e.message);
     $("rclose").onclick = hideReader;
     return;
   }
+  pdfState = state;   // only now is this the live reader
 
   state.total = state.doc.numPages;
   if(state.page > state.total - 1) state.page = state.total - 1;

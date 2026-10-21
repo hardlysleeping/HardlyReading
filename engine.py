@@ -125,7 +125,7 @@ def http_json(url: str, timeout: int = 60):
     """GET a URL and return parsed JSON. No retry here — callers that can
     recover (the resolver, the per-item probe) do their own attempts."""
 
-    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/2.0.0"})
+    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/2.0.1"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.load(r)
 
@@ -301,7 +301,6 @@ def plain_text(value, limit: int = 400) -> str:
         return ""
     text = re.sub(r"<[^>]+>", " ", str(value))
     text = html.unescape(text)
-    text = re.sub(r"\s+", " ", text)
     text = re.sub(r"\s+", " ", text).strip()
     if len(text) > limit:
         cut = text[:limit].rsplit(" ", 1)[0]
