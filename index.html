@@ -637,6 +637,15 @@
         <div class="hint" id="listenHint" style="margin:2px 0 6px"></div>
 
         <div class="sgroup">Password</div>
+        <!-- Off by default. The form below stays hidden until the switch is on,
+             so a fresh install never shows password fields that read as if they
+             were already protecting something. -->
+        <label class="rowchk">
+          <input type="checkbox" id="set_pw_on">
+          <span><b>Password protection</b>
+            <em>Off by default. On: a password is required to open the app.</em></span>
+        </label>
+        <div id="pwFields" hidden>
         <div class="hint" id="pwState" style="margin:2px 0 6px"></div>
         <label class="rowfield">
           <span id="pwLabel">New password</span>
@@ -657,6 +666,7 @@
           <button class="btn ghost sm" id="pwClear" hidden>Remove password</button>
         </div>
         <div class="hint" id="pwHint" style="margin:0 0 6px"></div>
+        </div>
 
         <div class="sgroup">Downloads</div>
         <label class="rowchk">
@@ -3452,8 +3462,11 @@ function startApp(){
 /* ---------- password settings ---------- */
 
 function pwState(){
-  api("/api/auth").then(a => {
+  return api("/api/auth").then(a => {
     authRequired = !!a.required;
+    // The switch is the truth of it: off means no password and no form.
+    $("set_pw_on").checked = !!a.required;
+    $("pwFields").hidden = !a.required;
     $("pwState").textContent = a.required
       ? "A password is required to open this app."
       : "No password. Anyone who can reach the app can use it.";
@@ -3504,6 +3517,17 @@ document.addEventListener("DOMContentLoaded", async ()=>{
   $("gatePass").addEventListener("keydown", (e) => { if(e.key === "Enter") gateLogin(); });
   $("pwSave").onclick = savePassword;
   $("pwClear").onclick = removePassword;
+  $("set_pw_on").onchange = async () => {
+    if($("set_pw_on").checked){
+      $("pwFields").hidden = false;
+      $("set_pw1").focus();
+      return;
+    }
+    // Switching it off with a password set means removing it; removePassword
+    // asks first, and pwState puts the switch back if that is cancelled.
+    if(authRequired) await removePassword();
+    await pwState();
+  };
 
   // With a password set there is nothing to poll until the gate is passed.
   try{

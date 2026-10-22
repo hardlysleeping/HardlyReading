@@ -437,7 +437,7 @@ The gear in the header opens a panel; changes save as you edit and persist in
 | Keep free | 256 MB | Space a download must leave on the disk. A job pauses before it eats into this. |
 | Pause between jobs | 30s | Gap between one job finishing and the next starting, per worker. |
 | Local only | **off** | Off: also reachable from other devices on the network. On: this computer only. Applied immediately; if the loopback bind fails it says so and the setting is reverted rather than falling back to all interfaces. |
-| Password | **none** | Optional. Typed twice to set, with a reveal button. See below. |
+| Password protection | **off** | Off: no password and no form — just the switch. On: set one, and every API call needs a session. See below. |
 | Disk | — | Used/free for the download folder, cache size, and **Clear** for cached covers and streamed pages. |
 
 Job cards can be **cancelled** before they start and **removed** from the list,
@@ -446,10 +446,15 @@ and library items can be **deleted** (file plus its reading position).
 ## Password
 
 Off by default: with no password the app opens for anyone who can reach the port,
-which is the point when it is your own machine on your own network.
+which is the point when it is your own machine on your own network. The switch in
+Settings is the whole state — off means no gate, no session requirement, and no
+form to misread as "already protected".
 
-**Settings → Password** to set one. It is typed twice, with an eye button if you
-want to see what you are typing. The *first* password can only be set from the
+Turning the switch off after setting a password asks before removing it.
+
+**Settings → Password protection** — a switch, off by default. Turn it on to
+reveal the form; the fields do not exist until you do. It is typed twice, with
+an eye button if you want to see what you are typing. The *first* password can only be set from the
 machine running the app — otherwise whoever reached the open port first could
 claim it and lock you out. Once set:
 

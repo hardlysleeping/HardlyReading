@@ -3,6 +3,16 @@
 Notable changes to HardlyReading. Versions are tagged on GitHub with matching
 release notes.
 
+## [2.7.4] — 2026-10-22
+
+### Changed
+
+- **Password protection is a switch, and it starts off.** The fields, buttons and
+  status line only appear once it is switched on, so a fresh install shows one
+  clearly-off control instead of a password form that looked like it was already
+  protecting the app. Switching it off with a password set asks before removing
+  it, and cancelling puts the switch back.
+
 ## [2.7.3] — 2026-10-22
 
 ### Fixed
@@ -721,6 +731,7 @@ First release.
 - Built-in CBZ / CBR / PDF reader; CBR needs `unrar`, `bsdtar` or `7z`
 - Cross-platform launcher that finds `aria2c` and opens the browser
 
+[2.7.4]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.7.4
 [2.7.3]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.7.3
 [2.7.2]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.7.2
 [2.7.1]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.7.1
