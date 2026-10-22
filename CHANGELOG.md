@@ -3,6 +3,14 @@
 Notable changes to HardlyReading. Versions are tagged on GitHub with matching
 release notes.
 
+## [2.7.1] — 2026-10-22
+
+### Fixed
+
+- The password test asserted `0600` on every platform; Windows reports `0666`
+  because `chmod` there cannot remove inherited ACL entries. The check is
+  POSIX-only now, and the README says so instead of promising `0600` everywhere.
+
 ## [2.7.0] — 2026-10-22
 
 ### Added
@@ -690,6 +698,7 @@ First release.
 - Built-in CBZ / CBR / PDF reader; CBR needs `unrar`, `bsdtar` or `7z`
 - Cross-platform launcher that finds `aria2c` and opens the browser
 
+[2.7.1]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.7.1
 [2.7.0]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.7.0
 [2.6.1]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.6.1
 [2.6.0]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.6.0

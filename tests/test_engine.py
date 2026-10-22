@@ -297,7 +297,8 @@ class AuthTest(unittest.TestCase):
             blob = fh.read()
         self.assertNotIn("correct-horse", blob)
         self.assertIn("pbkdf2_sha256", blob)
-        self.assertEqual(stat.S_IMODE(os.stat(server.AUTH_FILE).st_mode), 0o600)
+        if os.name != "nt":     # chmod 0600 is a POSIX guarantee; Windows uses ACLs
+            self.assertEqual(stat.S_IMODE(os.stat(server.AUTH_FILE).st_mode), 0o600)
 
     def test_sessions(self):
         server.clear_password()

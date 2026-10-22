@@ -460,7 +460,8 @@ claim it and lock you out. Once set:
   per client, so a stranger cannot lock you out of your own app
 - changing or removing the password resets that counter
 - the password itself is never stored: `auth.json` holds a salted
-  PBKDF2-SHA256 hash (200,000 rounds), mode `0600`
+  PBKDF2-SHA256 hash (200,000 rounds), mode `0600` on Linux and macOS; on
+  Windows it inherits the ACL of your profile folder
 - removing it puts the app straight back to open
 
 ## Hiding items
