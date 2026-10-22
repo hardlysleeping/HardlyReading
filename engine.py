@@ -70,7 +70,17 @@ FORMAT_LABEL = {
 # ---------------------------------------------------------------- paths
 
 def user_config_dir() -> str:
-    """Per-OS config directory, no external dependency."""
+    """Per-OS config directory, no external dependency.
+
+    IA_CONFIG_DIR wins on every platform: it is what lets a second copy run
+    beside the first (or a test instance exist at all) without sharing a
+    state file. Otherwise the native location is used.
+    """
+    override = os.environ.get("IA_CONFIG_DIR")
+    if override:
+        p = override
+        os.makedirs(p, exist_ok=True)
+        return p
     if os.name == "nt":
         base = os.environ.get("APPDATA") or os.path.expanduser("~")
     elif sys.platform == "darwin":

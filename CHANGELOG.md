@@ -5,6 +5,12 @@ release notes.
 
 ## [2.6.1] — 2026-10-21
 
+### Fixed
+
+- **`IA_CONFIG_DIR`** now overrides the config folder on every platform. On
+  Windows and macOS the native location was hard-coded, so a second instance or
+  a test run could not be kept away from the real state file. CI found it.
+
 ### Added
 
 - **A test suite** (`tests/test_engine.py`, 28 tests, no network, temp folders

@@ -19,7 +19,8 @@ sys.path.insert(0, ROOT)
 # to happen before `import engine`, because STATE_FILE/THUMB_DIR are module-level.
 _TMP = tempfile.mkdtemp(prefix="hr-test-")
 atexit.register(shutil.rmtree, _TMP, True)
-os.environ["XDG_CONFIG_HOME"] = os.path.join(_TMP, "cfg")
+os.environ["IA_CONFIG_DIR"] = os.path.join(_TMP, "cfg")
+os.environ["XDG_CONFIG_HOME"] = os.environ["IA_CONFIG_DIR"]
 os.environ["IA_STATE"] = os.path.join(_TMP, "state.json")
 os.environ["IA_HISTORY"] = os.path.join(_TMP, "history.db")
 os.environ["IA_DOWNLOAD_DIR"] = os.path.join(_TMP, "library")
@@ -41,8 +42,12 @@ def fresh_engine():
 
 class PathsTest(unittest.TestCase):
     def test_config_lands_in_the_temp_folder(self):
+        # IA_CONFIG_DIR has to win on every platform, otherwise a test run (or a
+        # second install) writes into the real config file.
         self.assertTrue(engine.user_config_dir().startswith(_TMP))
         self.assertTrue(engine.THUMB_DIR.startswith(_TMP))
+        self.assertTrue(engine.STATE_FILE.startswith(_TMP))
+        self.assertTrue(engine.HISTORY_DB.startswith(_TMP))
 
     def test_documents_dir_is_absolute(self):
         docs = engine.documents_dir()

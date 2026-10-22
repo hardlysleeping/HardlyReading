@@ -447,7 +447,7 @@ Useful for a second instance or a test run, so it cannot touch your real library
 
 | Variable | Effect |
 |---|---|
-| `IA_STATE` | Path to `state.json` |
+| `IA_CONFIG_DIR` | Whole config folder (state, history, caches) in one go — wins on every platform, including Windows and macOS |
 | `IA_HISTORY` | Path to the progress/favourites SQLite file |
 | `IA_DOWNLOAD_DIR` | Download folder, ahead of the setting in `state.json` |
 | `IA_ARIA2` | Path to the `aria2c` binary |
