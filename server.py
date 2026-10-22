@@ -111,6 +111,9 @@ def set_local_only(local_only):
         if old is not None:
             old.shutdown()
             old.server_close()
+        # Between the close and the next bind there is no listener; saying so is
+        # what stops a failed swap from looking like a working one.
+        _LISTEN.update(srv=None, thread=None, host=None)
         # The closed socket can hold the port for a moment; retry rather than
         # leave the app with no listener at all.
         last = None
@@ -330,7 +333,7 @@ def clear_caches():
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "HardlyReading/2.7.1"
+    server_version = "HardlyReading/2.7.2"
 
     def log_message(self, fmt, *args):
         pass  # quiet
@@ -343,10 +346,14 @@ class Handler(BaseHTTPRequestHandler):
             set_local_only(local_only)
         except Exception as exc:  # noqa: BLE001
             # The stored flag must describe the socket that actually exists,
-            # not the one the user asked for.
+            # not the one the user asked for. With no listener at all, leave the
+            # request in place: a restart then retries loopback instead of
+            # quietly coming back on every interface.
             try:
-                ENGINE.settings["local_only"] = bool(listen_info().get("local_only"))
-                ENGINE.save_state()
+                actual = listen_info()
+                if actual.get("host"):
+                    ENGINE.settings["local_only"] = bool(actual.get("local_only"))
+                    ENGINE.save_state()
             except Exception:  # noqa: BLE001
                 pass
             print(f"could not switch listen address: {exc}", file=sys.stderr)

@@ -3,6 +3,18 @@
 Notable changes to HardlyReading. Versions are tagged on GitHub with matching
 release notes.
 
+## [2.7.2] — 2026-10-22
+
+### Fixed
+
+- **A failed listener swap could still end up open to the network.** When the
+  loopback bind failed, the stored `local_only` flag was rewritten from the
+  socket state — and with nothing listening that read as "not local", so the
+  app came back on all interfaces at the next start. The request is kept
+  instead, and a restart retries loopback. The listener now also reports "no
+  host" between closing the old socket and binding the new one, rather than
+  claiming the old address.
+
 ## [2.7.1] — 2026-10-22
 
 ### Fixed
@@ -698,6 +710,7 @@ First release.
 - Built-in CBZ / CBR / PDF reader; CBR needs `unrar`, `bsdtar` or `7z`
 - Cross-platform launcher that finds `aria2c` and opens the browser
 
+[2.7.2]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.7.2
 [2.7.1]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.7.1
 [2.7.0]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.7.0
 [2.6.1]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.6.1

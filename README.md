@@ -596,7 +596,7 @@ downloading.
 python3 -m unittest discover -s tests -v
 ```
 
-49 offline tests: the shared file budget, the 1–4 job clamp, queue reordering
+52 offline tests: the shared file budget, the 1–4 job clamp, queue reordering
 (including the refusal to reorder a running job), resume semantics, byte-safe
 filenames, the deep-paging fallback, disk reporting, cache clearing, saved
 reading positions, the password gate over real HTTP (401s, login, cookies,

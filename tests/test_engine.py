@@ -505,6 +505,22 @@ class ListenTest(unittest.TestCase):
             server._open_listener = real
             server._LISTEN.update(old)
 
+    def test_a_failed_swap_leaves_the_requested_setting_alone(self):
+        real = server._open_listener
+        server._open_listener = lambda host, port: (_ for _ in ()).throw(OSError("no"))
+        old = dict(server._LISTEN)
+        server._LISTEN.update(srv=None, thread=None, host="0.0.0.0", port=8788)
+        # the settings endpoint saves the request first, then applies it
+        server.ENGINE.settings["local_only"] = True
+        try:
+            server.Handler._apply_listen(True)
+            # nothing is listening, so the flag must keep the request rather
+            # than flip to False and come back on every interface next start
+            self.assertTrue(server.ENGINE.settings["local_only"])
+        finally:
+            server._open_listener = real
+            server._LISTEN.update(old)
+
     def test_local_means_loopback(self):
         h = object.__new__(server.Handler)
         h.client_address = ("127.0.0.1", 5000)
