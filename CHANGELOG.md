@@ -3,6 +3,23 @@
 Notable changes to HardlyReading. Versions are tagged on GitHub with matching
 release notes.
 
+## [2.8.0] — 2026-10-22
+
+### Changed
+
+- Visual refresh. Same controls, same behaviour, new surface: deeper palette with
+  layered elevation, a sticky translucent header, segmented tab navigation,
+  real toggle switches in Settings, one focus ring for keyboard use, hover lift
+  on queue rows and result cards, and a blurred backdrop behind dialogs.
+- Covers crop from the top so magazine mastheads stay recognisable, and result
+  cards give them more height.
+- Library rows pin the progress badge and format column, so a longer label no
+  longer shifts Read sideways.
+- The Settings dialog becomes a bottom sheet on phones, and locks the page
+  behind it.
+- Narrow screens no longer scroll sideways: queue rows may shrink, and the paste
+  form and tab strip get their own phone layout.
+
 ## [2.7.4] — 2026-10-22
 
 ### Changed
@@ -731,6 +748,7 @@ First release.
 - Built-in CBZ / CBR / PDF reader; CBR needs `unrar`, `bsdtar` or `7z`
 - Cross-platform launcher that finds `aria2c` and opens the browser
 
+[2.8.0]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.8.0
 [2.7.4]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.7.4
 [2.7.3]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.7.3
 [2.7.2]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.7.2
