@@ -90,6 +90,16 @@ def documents_dir() -> str:
     into a folder nobody opens is the same as losing it.
     """
     home = os.path.expanduser("~")
+    # Windows: Documents can be redirected into OneDrive, and writing the
+    # library to a folder Explorer never shows is the same as losing it.
+    if os.name == "nt":
+        for cand in (os.path.join(os.environ.get("OneDrive", ""), "Documents"),
+                     os.path.join(os.environ.get("USERPROFILE", home), "Documents")):
+            if cand and os.path.isdir(cand):
+                return cand
+        return os.path.join(home, "Documents")
+    if sys.platform == "darwin":
+        return os.path.join(home, "Documents")
     cfg = os.path.join(home, ".config", "user-dirs.dirs")
     try:
         with open(cfg, "r", encoding="utf-8", errors="replace") as fh:
@@ -126,7 +136,7 @@ def http_json(url: str, timeout: int = 60):
     """GET a URL and return parsed JSON. No retry here — callers that can
     recover (the resolver, the per-item probe) do their own attempts."""
 
-    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/2.5.2"})
+    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/2.6.0"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.load(r)
 
@@ -732,7 +742,11 @@ class Engine:
         self.lock = threading.RLock()
         self.jobs: list[Job] = []
         self.order: list[str] = []
-        self.current = None
+        # Jobs being worked on right now. The queue runs several at once (the
+        # `parallel_jobs` setting), so "current" is a set, not one id.
+        self.running = set()
+        self._claimed = set()
+        self._workers = []
         self.paused = False
         self.settings = {
             "download_dir": default_download_dir(),
@@ -752,6 +766,9 @@ class Engine:
             # here rather than as a constant so it can be tuned per install
             # (the settings API only accepts keys that already exist).
             "space_reserve_mb": SPACE_RESERVE_MB,
+            # How many jobs may download at the same time. Two by default: it
+            # keeps the network busy without turning the machine into a heater.
+            "parallel_jobs": 2,
         }
         self._worker = None
         self._conn = None
@@ -1160,9 +1177,13 @@ WantedBy=default.target
                                  "pos": order_index.get(getattr(j, "id", ""), -1) + 1})
             return {
                 "jobs": jobs,
-                "current": self.current,
+                "current": (sorted(self.running)[0] if self.running else None),
+                # Everything downloading right now, so the header can say
+                # "3 downloading" instead of one job's name.
+                "running_jobs": sorted(self.running),
+                "parallel_jobs": self.target_workers(),
                 "paused": self.paused,
-                "busy": bool(self.current),
+                "busy": bool(self.running),
                 "settings": dict(self.settings),
                 # The UI shows this when the folder field is left empty, so an
                 # empty box is explained instead of looking like "no folder".
@@ -1246,11 +1267,36 @@ WantedBy=default.target
                     }
         return out
 
+    def target_workers(self) -> int:
+        """How many workers the queue should be running, clamped to 1–4."""
+        try:
+            n = int(self.settings.get("parallel_jobs", 2))
+        except (TypeError, ValueError):
+            n = 2
+        return max(1, min(4, n))
+
+    def file_concurrency(self) -> int:
+        """aria2 children per job.
+
+        The total is what matters for a slow machine, so several jobs at once
+        share the same budget instead of multiplying it: 12 in flight in total,
+        not 12 each.
+        """
+        try:
+            total = int(self.settings.get("jobs_in_flight", 12))
+        except (TypeError, ValueError):
+            total = 12
+        return max(1, round(total / self.target_workers()))
+
     def kick(self):
-        if self._worker and self._worker.is_alive():
-            return
-        self._worker = threading.Thread(target=self._run, daemon=True)
-        self._worker.start()
+        """Start enough workers to run the configured number of jobs at once."""
+        with self.lock:
+            self._workers = [t for t in getattr(self, "_workers", []) if t.is_alive()]
+            want = self.target_workers()
+            for _ in range(max(0, want - len(self._workers))):
+                t = threading.Thread(target=self._run, daemon=True)
+                t.start()
+                self._workers.append(t)
 
     def move_to(self, job_id: str, index: int) -> bool:
         """Put a waiting job at `index` in the run order.
@@ -1278,50 +1324,71 @@ WantedBy=default.target
             return False
         return self.move_to(job_id, self.order.index(job_id) + delta)
 
-    def _next_queued(self):
+    def _has_pending(self) -> bool:
+        with self.lock:
+            return bool(self._claimed) or any(
+                j.status in ("queued", "resume") for j in self.jobs)
+
+    def _next_queued(self, claim: bool = False):
+        """First runnable job in queue order, optionally claimed.
+
+        Claiming matters once several workers share the queue: two threads
+        must not walk into the same job. A claim lives only in memory — a
+        restart simply offers the job again.
+        """
         with self.lock:
             now = time.time()
             for jid in self.order:
                 j = self.get(jid)
-                if not j:
+                if not j or jid in self._claimed:
                     continue
                 if j.status == "resume":
+                    if claim:
+                        self._claimed.add(jid)
                     return j
                 if j.status == "queued":
                     # A retryable failure waits on the ladder before trying again
                     if j.next_try_at and now < j.next_try_at:
                         continue
+                    if claim:
+                        self._claimed.add(jid)
                     return j
         return None
 
     def _run(self):
-        """Worker loop: take the next due job, process or resume it, sleep
-        between jobs. Exits when nothing is queued or scheduled for retry."""
+        """One worker: take a due job, process or resume it, sleep, repeat.
+
+        Several of these run at once (see `parallel_jobs`). A worker exits when
+        there is nothing left that could run — claimed jobs belong to other
+        workers, and a retry due in an hour is not a reason to idle forever.
+        """
         while True:
             if self.paused:
                 time.sleep(0.5)
                 continue
-            job = self._next_queued()
+            job = self._next_queued(claim=True)
             if not job:
-                time.sleep(2)   # nothing runnable now; a retry may become due
                 with self.lock:
-                    if not any(j.status in ("queued", "resume") for j in self.jobs):
-                        return
+                    busy_elsewhere = bool(self._claimed)
+                if busy_elsewhere:
+                    time.sleep(1)
+                    continue
+                time.sleep(2)   # nothing runnable now; a retry may become due
+                if not self._has_pending():
+                    with self.lock:
+                        self._workers = [t for t in self._workers
+                                         if t is not threading.current_thread()]
+                    return
                 continue
             # One bad job must never stop the queue. Anything that escapes a
             # job's own error handling is recorded against that job and the
             # loop moves on, which is the whole point of a queue.
             try:
+                with self.lock:
+                    self.running.add(job.id)
                 if job.status == "resume":
                     entries = [i for i in job.items if not i.get("skip")]
-                    with self.lock:
-                        self.current = job.id
-                    try:
-                        self._download(job, entries)
-                    finally:
-                        with self.lock:
-                            self.current = None
-                            self.save_state()
+                    self._download(job, entries)
                 else:
                     self._process(job)
             except Exception as exc:  # noqa: BLE001
@@ -1330,13 +1397,20 @@ WantedBy=default.target
                     job.error = str(exc)
                     job.message = "stopped unexpectedly"
                     job.updated = time.time()
-                    self.current = None
                     self.save_state()
+            finally:
+                with self.lock:
+                    self.running.discard(job.id)
+                    self._claimed.discard(job.id)
+                    self.save_state()
+            # Politeness gap to archive.org, per worker. With two workers the
+            # effective rate is two jobs per gap, which is the point.
             time.sleep(min(self.settings.get("between_jobs", 30), 60))
 
     def _process(self, job: Job):
         with self.lock:
-            self.current = job.id
+            with self.lock:
+                self.running.add(job.id)
             job.status = "resolving"
             job.message = "Looking up items…"
             job.updated = time.time()
@@ -1455,7 +1529,7 @@ WantedBy=default.target
         finally:
             job.updated = time.time()
             with self.lock:
-                self.current = None
+                self.running.discard(job.id)
                 self.save_state()
 
     # ---- download
@@ -1535,6 +1609,7 @@ WantedBy=default.target
 
         job.done_bytes = job.total_bytes
         job.live = {}
+        self._drop_aria(dest)
 
         # --- verify: a job is done ONLY if every file checks out
         job.status = "verifying"
@@ -1568,13 +1643,23 @@ WantedBy=default.target
                            f"(attempt {job.retries + 1}) · {note}")
         self.save_state()
 
+    @staticmethod
+    def _drop_aria(dest):
+        """Remove the aria2 input file once the batch it describes is done."""
+        try:
+            os.unlink(os.path.join(dest, "aria.txt"))
+        except OSError:
+            pass
+
     def _run_aria(self, aria, job, dest, entries):
         """Run aria2 for one batch of files, streaming its progress into the job."""
         write_aria_input(entries, os.path.join(dest, "aria.txt"))
         self.save_state()
 
+        # Shared budget across concurrent jobs, so "3 jobs at once" means more
+        # parallelism at the job level, not 36 sockets.
         cmd = ([aria, "-i", "aria.txt",
-                "-j", str(self.settings.get("jobs_in_flight", 12))]
+                "-j", str(self.file_concurrency())]
                + ARIA_FLAGS + ["--summary-interval", "5"])
 
         proc = subprocess.Popen(cmd, cwd=dest, stdout=subprocess.PIPE,
@@ -1643,7 +1728,8 @@ WantedBy=default.target
 
     def _confirmed_download(self, job, entries):
         with self.lock:
-            self.current = job.id
+            with self.lock:
+                self.running.add(job.id)
         try:
             self._download(job, entries)
         except Exception as e:  # noqa: BLE001
@@ -1651,7 +1737,7 @@ WantedBy=default.target
             job.error = str(e)
         finally:
             with self.lock:
-                self.current = None
+                self.running.discard(job.id)
                 self.save_state()
 
     def cancel(self, job_id):
@@ -1675,8 +1761,8 @@ WantedBy=default.target
                 raise ValueError("no such job")
             self.jobs = [x for x in self.jobs if x.id != job_id]
             self.order = [i for i in self.order if i != job_id]
-            if self.current == job_id:
-                self.current = None
+            self.running.discard(job_id)
+            self._claimed.discard(job_id)
             self.save_state()
         return {"removed": job_id}
 

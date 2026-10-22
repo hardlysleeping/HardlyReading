@@ -3,7 +3,30 @@
 Notable changes to HardlyReading. Versions are tagged on GitHub with matching
 release notes.
 
-## [2.5.2] — 2026-10-21
+## [2.6.0] — 2026-10-21
+
+### Added
+
+- **Several jobs at once.** `Jobs at once` (1–4, default 2) sizes a worker pool
+  instead of one thread taking the queue in turn. The file budget is shared, so
+  two jobs means about six files each rather than twenty-four in total — more
+  parallelism without turning the machine into a heater. The header counts what
+  is running ("3 downloading") instead of naming one job.
+- **A Disk panel in Settings.** Used and free space for the download folder with
+  a bar, the cache sizes, and **Clear** to empty the cover and streamed-page
+  caches. Read live from the filesystem, not from startup.
+- **Keep free (MB)** is now a setting, so the pause threshold is visible instead
+  of a constant in the code.
+
+### Fixed
+
+- A `aria.txt` was left behind in every series folder after a job; it is removed
+  once the batch it describes finishes, including when the job pauses.
+- Windows: the Documents folder now follows OneDrive redirection before falling
+  back to `%USERPROFILE%\Documents`.
+- The status header could only describe one running job.
+
+
 
 ### Fixed
 

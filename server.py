@@ -27,6 +27,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 
 import engine  # noqa: E402
+import engine as engine_mod  # noqa: E402
 
 
 def find_free_port(start=8788, host="127.0.0.1"):
@@ -41,11 +42,96 @@ def find_free_port(start=8788, host="127.0.0.1"):
     raise RuntimeError("no free port")
 
 
+def network_ips():
+    """Global IPv4 addresses this machine is reachable on, container bridges out."""
+    skip = ("br-", "docker", "virbr", "veth", "tun", "tap", "vnet")
+    ips = []
+    try:
+        out = subprocess.run(
+            ["ip", "-4", "-o", "addr", "show", "scope", "global"],
+            capture_output=True, text=True, timeout=3,
+        ).stdout
+    except (OSError, subprocess.SubprocessError):
+        return ips
+    for line in out.splitlines():
+        parts = line.split()
+        if len(parts) > 3 and parts[2] == "inet" and not parts[1].startswith(skip):
+            ip = parts[3].split("/")[0]
+            if ip not in ips:
+                ips.append(ip)
+    return ips
+
+
 ENGINE = engine.Engine()
 
 
+def _dir_size(path: str):
+    """(files, bytes) for a cache folder, without following surprises."""
+    files, total = 0, 0
+    try:
+        with os.scandir(path) as it:
+            for e in it:
+                try:
+                    if e.is_file():
+                        files += 1
+                        total += e.stat().st_size
+                except OSError:
+                    continue
+    except OSError:
+        return 0, 0
+    return files, total
+
+
+def disk_report(eng) -> dict:
+    """Download folder capacity plus cache sizes, for the Settings panel."""
+    root = eng.download_root()
+    probe = root
+    while probe and not os.path.isdir(probe):
+        parent = os.path.dirname(probe)
+        if parent == probe:
+            break
+        probe = parent
+    total = used = free = 0
+    try:
+        total, used, free = shutil.disk_usage(probe or ".")
+    except OSError:
+        pass
+    thumbs_n, thumbs_b = _dir_size(engine_mod.THUMB_DIR)
+    stream_n, stream_b = _dir_size(engine_mod.STREAM_DIR)
+    return {
+        "path": root,
+        "exists": os.path.isdir(root),
+        "total": total, "used": used, "free": free,
+        "reserve_mb": int(eng.settings.get("space_reserve_mb", 256) or 0),
+        "caches": {
+            "thumbs": {"files": thumbs_n, "bytes": thumbs_b},
+            "stream": {"files": stream_n, "bytes": stream_b},
+        },
+    }
+
+
+def clear_caches():
+    """Empty the cover and streamed-page caches. Files only, no settings."""
+    freed, removed = 0, 0
+    for d in (engine.THUMB_DIR, engine.STREAM_DIR):
+        try:
+            with os.scandir(d) as it:
+                for e in it:
+                    try:
+                        if e.is_file():
+                            size = e.stat().st_size
+                            os.unlink(e.path)
+                            freed += size
+                            removed += 1
+                    except OSError:
+                        continue
+        except OSError:
+            continue
+    return freed, removed
+
+
 class Handler(BaseHTTPRequestHandler):
-    server_version = "HardlyReading/2.5.2"
+    server_version = "HardlyReading/2.6.0"
 
     def log_message(self, fmt, *args):
         pass  # quiet
@@ -392,6 +478,11 @@ class Handler(BaseHTTPRequestHandler):
             self.wfile.write(blob)
             return
 
+        if path == "/api/disk":
+            # What the Settings panel shows: how full the download folder's
+            # filesystem is, and how much the caches are holding.
+            return self._send(200, disk_report(ENGINE))
+
         if path == "/api/thumb":
             # Cover for a library row: page 0, downscaled and cached server-side.
             # Returns 404 rather than a broken image so the UI can fall back to
@@ -627,6 +718,10 @@ class Handler(BaseHTTPRequestHandler):
             ok = _e.open_folder(target)
             return self._send(200, {"opened": ok, "path": target})
 
+        if path == "/api/clear-cache":
+            freed, removed = clear_caches()
+            return self._send(200, {"freed": freed, "files": removed})
+
         if path == "/api/settings":
             with ENGINE.lock:
                 for k, v in (body or {}).items():
@@ -640,8 +735,27 @@ class Handler(BaseHTTPRequestHandler):
                         # Store the trimmed value; "" means "use the default"
                         # and is resolved by Engine.download_root().
                         v = v.strip()
+                    # Numbers that drive behaviour get bounded here rather than
+                    # trusting whatever the panel sends.
+                    if k == "parallel_jobs":
+                        try:
+                            v = max(1, min(4, int(v)))
+                        except (TypeError, ValueError):
+                            continue
+                    if k == "space_reserve_mb":
+                        try:
+                            v = max(0, min(1_000_000, int(v)))
+                        except (TypeError, ValueError):
+                            continue
+                    if k == "jobs_in_flight":
+                        try:
+                            v = max(1, min(64, int(v)))
+                        except (TypeError, ValueError):
+                            continue
                     ENGINE.settings[k] = v
                 ENGINE.save_state()
+            # A new parallelism only matters if the pool is resized now.
+            ENGINE.kick()
             # Report the real service state, not only the stored flag: the unit
             # can exist without the setting, or be removed by hand.
             st = ENGINE.autostart_state()
@@ -748,7 +862,9 @@ def main():
         return default
 
     want = int(opt("--port", os.environ.get("IA_PORT", "8788")))
-    host = opt("--host", os.environ.get("IA_HOST", "127.0.0.1"))
+    # Default to every interface so the UI is reachable from the phone and the
+    # tablet. Pass --host 127.0.0.1 (or IA_HOST=127.0.0.1) for local-only.
+    host = opt("--host", os.environ.get("IA_HOST", "0.0.0.0"))
     no_browser = "--no-browser" in argv
 
     port = find_free_port(want, host)
@@ -764,7 +880,10 @@ def main():
 
     print(f"HardlyReading running at {url}")
     if host in ("0.0.0.0", "::"):
-        print(f"  (also reachable on your LAN — listening on all interfaces)")
+        print("  reachable from your other devices on:")
+        for ip in network_ips():
+            print(f"    http://{ip}:{port}")
+        print("  no authentication — anyone who can reach it controls the queue.")
 
     if not no_browser:
         try:

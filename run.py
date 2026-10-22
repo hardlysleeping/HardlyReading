@@ -140,25 +140,45 @@ def check_port_free(host: str, port: int) -> int:
     return port  # let the server produce the real error
 
 
+def arg_value(flag: str, default: str) -> str:
+    """Value of a `--flag value` pair the user typed, else the default."""
+    argv = sys.argv[1:]
+    if flag in argv:
+        i = argv.index(flag)
+        if i + 1 < len(argv):
+            return argv[i + 1]
+    return default
+
+
 def main() -> None:
     check_python()
     aria2 = find_aria2()
     os.environ["IA_ARIA2"] = aria2
 
-    port = check_port_free("127.0.0.1", 8788)
+    # Listen on every interface unless asked otherwise, so the UI opens from a
+    # phone or tablet on the same network.
+    host = arg_value("--host", os.environ.get("IA_HOST", "0.0.0.0"))
+    port = check_port_free(host, 8788)
+
+    import server  # noqa: E402  (after host/port are settled)
 
     print()
     print("  HardlyReading")
     print("  " + "-" * 40)
     print(f"  downloader : {aria2}")
     print(f"  address    : http://127.0.0.1:{port}")
+    if host not in ("127.0.0.1", "::1"):
+        for ip in server.network_ips():
+            print(f"               http://{ip}:{port}")
+        print("  No authentication: anyone who can reach the port controls the")
+        print("  download queue. Run with --host 127.0.0.1 to keep it local.")
     print()
     print("  Leave this window open while you use the app.")
     print("  Close it (or press Ctrl+C) to stop.")
     print()
 
-    sys.argv = [sys.argv[0], "--port", str(port)]
-    import server
+    extras = [a for a in sys.argv[1:] if a.startswith("--") and a not in ("--port", "--host")]
+    sys.argv = [sys.argv[0], "--port", str(port), "--host", host] + extras
     server.main()
 
 

@@ -85,6 +85,18 @@
     cursor:pointer;padding:4px 8px;border-radius:6px}
   .mhead button:hover{color:var(--text)}
   .mbody{padding:8px 20px 18px;overflow:auto}
+  /* Disk panel: a used-vs-total bar, then the numbers in plain words. */
+  .diskbox{border:1px solid var(--line);border-radius:10px;padding:10px 12px;
+    background:rgba(255,255,255,.02);display:flex;flex-direction:column;gap:7px}
+  .diskrow{display:flex;align-items:center;justify-content:space-between;gap:10px;
+    font-size:12.5px;color:var(--text)}
+  .diskrow .dk{color:var(--dim)}
+  .diskrow code{font-size:11.5px;color:var(--dim);overflow:hidden;
+    text-overflow:ellipsis;white-space:nowrap;max-width:58%}
+  .diskbar{height:6px;border-radius:99px;background:rgba(255,255,255,.07);overflow:hidden}
+  .diskbar i{display:block;height:100%;background:var(--accent);width:0%;transition:width .3s}
+  .diskbar i.warn{background:var(--warn)}
+  .diskbar i.crit{background:var(--err)}
   .sgroup{font-size:11px;font-weight:700;color:var(--dim);letter-spacing:.07em;
     text-transform:uppercase;margin:18px 0 4px}
   .sgroup:first-child{margin-top:8px}
@@ -579,13 +591,46 @@
         <div class="hint" id="dlHint" style="margin:-2px 0 4px"></div>
         <div class="row2">
           <label class="rowfield">
-            <span>Parallel files</span>
-            <input type="number" id="set_jobs_in_flight" min="1" max="16">
+            <span>Jobs at once</span>
+            <select id="set_parallel_jobs">
+              <option value="1">1 — one at a time</option>
+              <option value="2">2 — steady</option>
+              <option value="3">3 — brisk</option>
+              <option value="4">4 — as much as is sensible</option>
+            </select>
           </label>
           <label class="rowfield">
             <span>Pause between jobs (s)</span>
             <input type="number" id="set_between_jobs" min="0" max="600">
           </label>
+        </div>
+        <div class="hint" id="parallelHint" style="margin:-2px 0 6px"></div>
+        <div class="row2">
+          <label class="rowfield">
+            <span>Files at once (total)</span>
+            <input type="number" id="set_jobs_in_flight" min="1" max="64">
+          </label>
+          <label class="rowfield">
+            <span>Keep free (MB)</span>
+            <input type="number" id="set_space_reserve_mb" min="0" max="100000">
+          </label>
+        </div>
+        <div class="hint" style="margin:-2px 0 6px">
+          Files are split across the jobs running at once, so 12 with two jobs
+          is about six each — not 24. A job pauses when the next file would eat
+          into the space kept free.
+        </div>
+
+        <div class="sgroup">Disk</div>
+        <div class="diskbox" id="diskBox">
+          <div class="diskrow"><span class="dk">Download folder</span>
+            <code id="diskPath">—</code></div>
+          <div class="diskbar"><i id="diskFill"></i></div>
+          <div class="diskrow"><span id="diskNums">—</span>
+            <span id="diskFree" class="dk"></span></div>
+          <div class="diskrow"><span class="dk">Cached covers &amp; pages</span>
+            <span><span id="cacheNums">—</span>
+              <button class="btn ghost sm" id="clearCache">Clear</button></span></div>
         </div>
       </div>
       <div class="mfoot">
@@ -1359,8 +1404,12 @@ function renderStatus(st){
   const dot = $("statusDot"), txt = $("statusText");
   if(st.paused){ dot.className="dot"; txt.textContent="Paused"; return; }
   if(st.busy){
-    const cur = (st.jobs||[]).find(j=>j.id===st.current);
+    // Several jobs can run at once now, so the header counts them instead of
+    // naming whichever one happened to be first.
+    const n = (st.running_jobs || []).length;
     dot.className="dot work";
+    if(n > 1){ txt.textContent = `${n} downloading`; return; }
+    const cur = (st.jobs||[]).find(j=>j.id===st.current);
     txt.textContent = cur ? (STATUS_LABEL[cur.status]||"Working") + "…" : "Working…";
     return;
   }
@@ -2661,8 +2710,10 @@ const SETTING_FIELDS = {
   skip_existing:   {id:"set_skip_existing",   type:"bool",  def:true},
   komga_naming:    {id:"set_komga_naming",    type:"bool",  def:true},
   download_dir:    {id:"set_download_dir",    type:"str",   def:""},
-  jobs_in_flight:  {id:"set_jobs_in_flight",  type:"int",   def:12, min:1, max:16},
+  jobs_in_flight:  {id:"set_jobs_in_flight",  type:"int",   def:12, min:1, max:64},
   between_jobs:    {id:"set_between_jobs",    type:"int",   def:30, min:0, max:600},
+  parallel_jobs:   {id:"set_parallel_jobs",   type:"int",   def:2,  min:1, max:4},
+  space_reserve_mb:{id:"set_space_reserve_mb",type:"int",   def:256,min:0, max:100000},
 };
 
 function fillSettings(settings){
@@ -2673,6 +2724,51 @@ function fillSettings(settings){
     else el.value = (v === null || v === undefined) ? "" : v;
   }
   explainDownloadDir(settings);
+  explainParallel(settings);
+  refreshDisk();
+}
+
+/* "Files per job" is a total, not a per-job number once jobs run together. */
+function explainParallel(settings){
+  const jobs = parseInt((settings && settings.parallel_jobs) || 2, 10) || 2;
+  const files = parseInt((settings && settings.jobs_in_flight) || 12, 10) || 12;
+  const per = Math.max(1, Math.round(files / jobs));
+  const hint = $("parallelHint");
+  if(hint){
+    hint.innerHTML = jobs === 1
+      ? "One job at a time, one file after another in queue order."
+      : `${jobs} jobs at once, about ${per} file${per===1?"":"s"} each — ` +
+        `roughly ${files} downloads in total.`;
+  }
+}
+
+/* Live disk numbers for the download folder and the two caches. */
+async function refreshDisk(){
+  const box = $("diskBox");
+  if(!box) return;
+  try{
+    const d = await api("/api/disk");
+    $("diskPath").textContent = d.path;
+    $("diskPath").title = d.path;
+    const used = d.total ? (d.used / d.total) * 100 : 0;
+    const fill = $("diskFill");
+    fill.style.width = Math.max(1.5, used).toFixed(1) + "%";
+    fill.className = used > 92 ? "crit" : (used > 80 ? "warn" : "");
+    $("diskNums").textContent = d.total
+      ? `${fmtBytes(d.used)} of ${fmtBytes(d.total)} used`
+      : "space unknown for this folder";
+    $("diskFree").textContent = d.total ? `${fmtBytes(d.free)} free` : "";
+    const c = d.caches || {};
+    const files = (c.thumbs?.files || 0) + (c.stream?.files || 0);
+    const bytes = (c.thumbs?.bytes || 0) + (c.stream?.bytes || 0);
+    $("cacheNums").textContent = files
+      ? `${files} file${files===1?"":"s"} · ${fmtBytes(bytes)}`
+      : "empty";
+    const btn = $("clearCache");
+    if(btn) btn.disabled = files === 0;
+  }catch(e){
+    $("diskNums").textContent = "could not read the disk";
+  }
 }
 
 /* An empty folder box used to look like a missing setting. It is not: empty
@@ -2742,6 +2838,22 @@ function saveSettings(immediate){
 function openSettings(){
   fillSettings(lastState && lastState.settings);
   $("settingsModal").hidden = false;
+  refreshDisk();
+}
+
+async function clearCacheNow(){
+  const btn = $("clearCache");
+  if(!btn) return;
+  btn.disabled = true; btn.textContent = "Clearing…";
+  try{
+    const r = await api("/api/clear-cache", {method:"POST"});
+    toast(r.files ? `Cleared ${r.files} file${r.files===1?"":"s"} · ${fmtBytes(r.freed)}` : "Nothing to clear");
+    await refreshDisk();
+  }catch(e){
+    toast("Could not clear: " + e.message);
+  }finally{
+    btn.textContent = "Clear";
+  }
 }
 function closeSettings(){ $("settingsModal").hidden = true; }
 
@@ -2785,13 +2897,19 @@ $("clearHistory").onclick = async ()=>{
   }
 };
 $("settingsClose").onclick = closeSettings;
+$("clearCache").onclick = clearCacheNow;
 $("settingsDone").onclick = closeSettings;
 $("settingsModal").addEventListener("click", (e)=>{
   if(e.target === $("settingsModal")) closeSettings();
 });
 for(const f of Object.values(SETTING_FIELDS)){
   const el = $(f.id); if(!el) continue;
-  el.addEventListener("change", ()=>saveSettings());
+  el.addEventListener("change", ()=>{
+    saveSettings();
+    if(el.id === "set_parallel_jobs" || el.id === "set_jobs_in_flight"){
+      explainParallel(readSettings());
+    }
+  });
 }
 
 /* ---------- boot ---------- */

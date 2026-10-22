@@ -93,6 +93,8 @@ UI never drives a download directly — it only posts intent and reads back stat
   to start from the first issue or the newest, and only those are queued.
 - **Stops before it fills the disk** — if the next file will not fit, the job
   pauses and says so instead of leaving a truncated file behind.
+- **Several jobs at once** — 1 to 4, with the file budget shared between them so
+  more parallelism does not mean more sockets.
 
 ## Screenshots
 
@@ -129,6 +131,15 @@ collection costs nothing.
 
 The card then reads `the newest 25 of 312`, and everything outside that count is
 reported as over the limit, not as a duplicate you already had.
+
+### Watching the disk
+
+Settings → **Disk** shows how full the download folder's drive is — a bar, the
+used and free numbers — plus how much the cover and streamed-page caches are
+holding, with **Clear** to empty them. It reads the filesystem on each open, so
+the numbers are current rather than from startup.
+
+![Settings and disk](docs/settings.png)
 
 ### When the disk runs out
 
@@ -167,6 +178,18 @@ python run.py
 
 Your browser opens at `http://127.0.0.1:8788`. Leave the terminal window open
 while you use it; close it to stop.
+
+The server listens on **every interface by default**, so the UI also opens from
+your phone, tablet or another machine on the same network:
+
+    http://<this machine's address>:8788
+
+There is no authentication, so anyone who can reach the port can control the
+download queue. To keep it on this machine only:
+
+```bash
+python run.py --host 127.0.0.1     # or IA_HOST=127.0.0.1 python run.py
+```
 
 `run.py` checks your Python, finds aria2c, and tells you exactly what to install
 if anything is missing — it will not half-start.
@@ -404,8 +427,11 @@ The gear in the header opens a panel; changes save as you edit and persist in
 | Ask before downloading | on | Show the file plan and total size, then wait for you. |
 | Skip files I already have | on | Drop entries whose checksum is already in the folder. |
 | Komga folder naming | on | One folder per series with issue-ordered filenames. Off keeps archive.org's original filenames in a folder named after the link. |
-| Parallel files | 12 | How many files aria2 fetches at once — the queue card shows each one. |
-| Pause between jobs | 30s | Gap between one job finishing and the next starting. |
+| Jobs at once | 2 | How many jobs download at the same time — 1 to 4. More than four slows a normal machine down more than it gains. |
+| Files at once (total) | 12 | Shared by the jobs running, so two jobs is about six files each, not 24. |
+| Keep free | 256 MB | Space a download must leave on the disk. A job pauses before it eats into this. |
+| Pause between jobs | 30s | Gap between one job finishing and the next starting, per worker. |
+| Disk | — | Used/free for the download folder, cache size, and **Clear** for cached covers and streamed pages. |
 
 Job cards can be **cancelled** before they start and **removed** from the list,
 and library items can be **deleted** (file plus its reading position).
@@ -420,6 +446,8 @@ Useful for a second instance or a test run, so it cannot touch your real library
 | `IA_HISTORY` | Path to the progress/favourites SQLite file |
 | `IA_DOWNLOAD_DIR` | Download folder, ahead of the setting in `state.json` |
 | `IA_ARIA2` | Path to the `aria2c` binary |
+| `IA_HOST` | Listen address. Default `0.0.0.0` (all interfaces). Set `127.0.0.1` for local-only. `--host` wins over this. |
+| `IA_PORT` | Listen port, default `8788` |
 
 ## Where things are stored
 
@@ -469,9 +497,12 @@ Worth knowing before you point it at a 500-issue collection:
   Resume; it will not spend the night retrying itself into a full disk.
 - **PDF covers need poppler.** The library renders page one of a PDF with
   `pdftoppm` when it is installed. Without it a PDF shows a plain tile.
-- **Tested on Linux.** `run.py` handles Windows and macOS paths, the `aria2c.exe`
-  lookup and the winget fallback, but has not been run on those platforms — treat
-  them as untested rather than supported. Start-on-boot is systemd-only.
+- **Windows and macOS are written but untested.** Paths follow the platform
+  (Documents under OneDrive on Windows, `~/Library/Application Support` for
+  settings), the downloader lookup tries `aria2c.exe` and winget's links folder,
+  and `/api/disk` asks the OS rather than parsing `df`. Nothing here has been
+  run on those systems, so expect rough edges. Start-on-boot is systemd-only and
+  reports "unsupported" elsewhere.
 
 ## Skipping what you already have
 
