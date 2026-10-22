@@ -6,11 +6,16 @@ would talk to the network is monkeypatched at the module boundary.
 """
 
 import atexit
+import http.client
+import json
 import os
 import shutil
+import stat
 import sys
 import tempfile
+import threading
 import unittest
+from http.server import ThreadingHTTPServer
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, ROOT)
@@ -36,6 +41,7 @@ def fresh_engine():
     with e.lock:
         e.jobs = []
         e.order = []
+        e.categories = []
         e.save_state()
     return e
 
@@ -268,6 +274,242 @@ class ProgressTest(unittest.TestCase):
         self.assertEqual(e.get_progress("abc"), 14)
         e.clear_history()
         self.assertEqual(e.get_progress("abc"), 0)
+
+
+class AuthTest(unittest.TestCase):
+    def tearDown(self):
+        server.clear_password()
+
+    def test_no_password_means_no_gate(self):
+        server.clear_password()
+        self.assertFalse(server.auth_required())
+
+    def test_set_and_verify(self):
+        server.set_password("correct-horse")
+        self.assertTrue(server.auth_required())
+        self.assertTrue(server.password_ok("correct-horse"))
+        self.assertFalse(server.password_ok("wrong"))
+        self.assertFalse(server.password_ok(""))
+
+    def test_the_file_holds_a_hash_not_the_password(self):
+        server.set_password("correct-horse")
+        with open(server.AUTH_FILE) as fh:
+            blob = fh.read()
+        self.assertNotIn("correct-horse", blob)
+        self.assertIn("pbkdf2_sha256", blob)
+        self.assertEqual(stat.S_IMODE(os.stat(server.AUTH_FILE).st_mode), 0o600)
+
+    def test_sessions(self):
+        server.clear_password()
+        token = server.new_session()
+        self.assertTrue(server.session_valid(token))
+        self.assertFalse(server.session_valid("invented"))
+        self.assertFalse(server.session_valid(None))
+        server._SESSIONS[token] = 1.0          # long expired
+        self.assertFalse(server.session_valid(token))
+
+    def test_clearing_signs_everyone_out(self):
+        server.set_password("eight-chars")
+        token = server.new_session()
+        server.clear_password()
+        self.assertFalse(server.auth_required())
+        self.assertFalse(server.session_valid(token))
+
+    def test_lockout_is_per_client(self):
+        server.forget_login_failures()
+        for _ in range(server.LOGIN_FAILS_MAX):
+            server.note_login_failure("10.0.0.5")
+        self.assertGreater(server.login_locked_for("10.0.0.5"), 0)
+        self.assertEqual(server.login_locked_for("10.0.0.6"), 0)
+
+    def test_session_table_is_capped(self):
+        server.clear_password()
+        server._SESSIONS.clear()
+        for _ in range(server.MAX_SESSIONS + 20):
+            server.new_session()
+        self.assertLessEqual(len(server._SESSIONS), server.MAX_SESSIONS)
+
+
+class CategoryTest(unittest.TestCase):
+    def setUp(self):
+        self.e = fresh_engine()
+        self.e.add_category("Favourites")
+
+    def test_add_and_duplicates(self):
+        self.assertEqual(self.e.categories[0]["id"], "favourites")
+        with self.assertRaises(ValueError):
+            self.e.add_category("favourites")
+        with self.assertRaises(ValueError):
+            self.e.add_category("   ")
+
+    def test_rename_rejects_a_name_already_in_use(self):
+        self.e.add_category("Later")
+        with self.assertRaises(ValueError):
+            self.e.rename_category("later", "Favourites")
+        self.e.rename_category("later", "Soon")
+        self.assertEqual([c["name"] for c in self.e.categories], ["Favourites", "Soon"])
+
+    def test_pinned_come_first_and_there_are_three(self):
+        for n in ("A", "B", "C"):
+            self.e.add_category(n)
+        ids = [c["id"] for c in self.e.categories]
+        for cid in ids[:3]:
+            self.e.pin_category(cid, True)
+        with self.assertRaises(ValueError):
+            self.e.pin_category(ids[3], True)
+        self.assertEqual([c["id"] for c in self.e.categories][:3], ids[:3])
+
+    def test_an_unpinned_category_cannot_jump_a_pin(self):
+        self.e.add_category("Later")
+        self.e.pin_category("favourites", True)
+        self.assertFalse(self.e.move_category("later", -1))
+
+    def test_delete_returns_jobs_to_uncategorised(self):
+        job = engine.Job(id="j1", kind="item", source="s", label="l", query="q",
+                         category="favourites")
+        self.e.jobs.append(job)
+        self.e.order.append("j1")
+        self.e.delete_category("favourites")
+        self.assertEqual(job.category, "")
+        self.assertEqual(self.e.categories, [])
+
+    def test_unknown_ids_are_refused(self):
+        with self.assertRaises(ValueError):
+            self.e.rename_category("nope", "Something")
+        with self.assertRaises(ValueError):
+            self.e.delete_category("nope")
+        with self.assertRaises(ValueError):
+            self.e.pin_category("nope", True)
+
+    def test_filing_a_job(self):
+        job = engine.Job(id="j2", kind="item", source="s", label="l", query="q2")
+        self.e.jobs.append(job)
+        self.e.order.append("j2")
+        self.assertEqual(self.e.set_job_category("j2", "favourites"), "favourites")
+        self.assertEqual(self.e.set_job_category("j2", ""), "")
+        with self.assertRaises(ValueError):
+            self.e.set_job_category("j2", "nope")
+        with self.assertRaises(ValueError):
+            self.e.set_job_category("no-such-job", "")
+
+    def test_categories_survive_a_restart(self):
+        self.e.save_state()
+        self.assertEqual([c["id"] for c in engine.Engine().categories], ["favourites"])
+
+
+class HiddenTest(unittest.TestCase):
+    def test_hide_and_unhide(self):
+        e = fresh_engine()
+        e.set_hidden("hidden-test-key", True)
+        self.assertIn("hidden-test-key", e.hidden_keys())
+        e.set_hidden("hidden-test-key", False)
+        self.assertNotIn("hidden-test-key", e.hidden_keys())
+
+
+class QuietHandler(server.Handler):
+    def log_message(self, *a):
+        pass
+
+
+class GateTest(unittest.TestCase):
+    """The gate itself, over HTTP, on an ephemeral port."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.srv = ThreadingHTTPServer(("127.0.0.1", 0), QuietHandler)
+        cls.port = cls.srv.server_address[1]
+        cls.thread = threading.Thread(target=cls.srv.serve_forever, daemon=True)
+        cls.thread.start()
+
+    @classmethod
+    def tearDownClass(cls):
+        cls.srv.shutdown()
+        cls.srv.server_close()
+
+    def setUp(self):
+        server.clear_password()
+
+    def tearDown(self):
+        server.clear_password()
+
+    def req(self, method, path, body=None, cookie=None):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        headers = {}
+        data = None
+        if body is not None:
+            data = json.dumps(body).encode()
+            headers["Content-Type"] = "application/json"
+            headers["Content-Length"] = str(len(data))
+        if cookie:
+            headers["Cookie"] = cookie
+        conn.request(method, path, body=data, headers=headers)
+        r = conn.getresponse()
+        raw, ctype = r.read(), r.getheader("Set-Cookie")
+        conn.close()
+        return r.status, raw, ctype
+
+    def test_open_when_there_is_no_password(self):
+        self.assertEqual(self.req("GET", "/api/state")[0], 200)
+
+    def test_everything_but_the_shell_is_locked(self):
+        server.set_password("correct-horse")
+        self.assertEqual(self.req("GET", "/api/state")[0], 401)
+        self.assertEqual(self.req("GET", "/api/library")[0], 401)
+        self.assertEqual(self.req("POST", "/api/pause", {"paused": True})[0], 401)
+        # the shell and the auth probe have to stay open or the gate cannot draw
+        self.assertEqual(self.req("GET", "/")[0], 200)
+        self.assertEqual(self.req("GET", "/api/auth")[0], 200)
+
+    def test_login_sets_a_session_that_opens_the_api(self):
+        server.set_password("correct-horse")
+        status, _, cookie = self.req("POST", "/api/login", {"password": "correct-horse"})
+        self.assertEqual(status, 200)
+        self.assertIn("hr_session=", cookie or "")
+        token = cookie.split("hr_session=")[1].split(";")[0]
+        self.assertEqual(self.req("GET", "/api/state", cookie=f"hr_session={token}")[0], 200)
+
+    def test_a_wrong_password_is_refused(self):
+        server.set_password("correct-horse")
+        self.assertEqual(self.req("POST", "/api/login", {"password": "nope"})[0], 401)
+
+    def test_a_huge_body_is_refused_before_it_is_read(self):
+        conn = http.client.HTTPConnection("127.0.0.1", self.port, timeout=5)
+        conn.putrequest("POST", "/api/add")
+        conn.putheader("Content-Length", str(server.Handler.MAX_BODY + 1))
+        conn.endheaders()          # no body: the answer must not wait for one
+        r = conn.getresponse()
+        r.read()
+        conn.close()
+        self.assertEqual(r.status, 413)
+
+
+class ListenTest(unittest.TestCase):
+    def test_moving_to_loopback_never_falls_back_to_all_interfaces(self):
+        real = server._open_listener
+        seen = []
+
+        def refuse(host, port):
+            seen.append(host)
+            raise OSError("in use")
+
+        server._open_listener = refuse
+        old = dict(server._LISTEN)
+        server._LISTEN.update(srv=None, thread=None, host="0.0.0.0", port=8788)
+        try:
+            with self.assertRaises(RuntimeError):
+                server.set_local_only(True)
+            self.assertIn("127.0.0.1", seen)
+            self.assertNotIn("0.0.0.0", seen)
+        finally:
+            server._open_listener = real
+            server._LISTEN.update(old)
+
+    def test_local_means_loopback(self):
+        h = object.__new__(server.Handler)
+        h.client_address = ("127.0.0.1", 5000)
+        self.assertTrue(h._is_local())
+        h.client_address = ("10.0.0.7", 5000)
+        self.assertFalse(h._is_local())
 
 
 if __name__ == "__main__":

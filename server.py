@@ -14,8 +14,11 @@
 # this program. If not, see <https://www.gnu.org/licenses/>.
 
 """HardlyReading — HTTP API + static UI. Stdlib only."""
+import base64
+import hashlib
 import json
 import os
+import secrets
 import shutil
 import socket
 import subprocess
@@ -103,6 +106,7 @@ def set_local_only(local_only):
         if _LISTEN["host"] == host:
             return listen_info()
         port = _LISTEN["port"]
+        prev = _LISTEN["host"]
         old = _LISTEN["srv"]
         if old is not None:
             old.shutdown()
@@ -118,9 +122,143 @@ def set_local_only(local_only):
                 last = exc
                 time.sleep(0.05)
         else:
-            _open_listener("0.0.0.0" if local_only else "127.0.0.1", port)
+            # Never fall back to all interfaces: a "local only" toggle that
+            # quietly opens the port to the network is worse than no listener
+            # at all. Reopen the old address only when it was loopback too.
+            if prev in ("127.0.0.1", "::1"):
+                try:
+                    _open_listener(prev, port)
+                except OSError:
+                    pass
             raise RuntimeError(f"could not switch listen address: {last}")
         return listen_info()
+
+
+# --------------------------------------------------------------- password
+# Optional, off by default: with no password there is no gate at all. The hash
+# lives in its own file — never in state.json, which is served to the browser —
+# and sessions are in memory, so a restart signs every device out again.
+
+AUTH_FILE = os.path.join(engine.user_config_dir(), "auth.json")
+PBKDF2_ROUNDS = 200_000
+SESSION_DAYS = 30
+LOGIN_FAILS_MAX = 5
+LOGIN_LOCK_SECONDS = 30
+MIN_PASSWORD = 4
+
+_SESSIONS = {}          # token -> expiry (epoch seconds)
+_FAILS = {}             # client address -> recent failure timestamps
+_AUTH_LOCK = threading.Lock()
+
+
+def _hash(password: str, salt: bytes, rounds: int = PBKDF2_ROUNDS) -> bytes:
+    return hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, rounds)
+
+
+def auth_required() -> bool:
+    try:
+        with open(AUTH_FILE) as fh:
+            return bool(json.load(fh).get("hash"))
+    except (OSError, ValueError):
+        return False
+
+
+def set_password(password: str):
+    salt = secrets.token_bytes(16)
+    blob = {
+        "algo": "pbkdf2_sha256",
+        "rounds": PBKDF2_ROUNDS,
+        "salt": base64.b64encode(salt).decode(),
+        "hash": base64.b64encode(_hash(password, salt)).decode(),
+    }
+    tmp = AUTH_FILE + ".tmp"
+    os.makedirs(os.path.dirname(AUTH_FILE), exist_ok=True)
+    with open(tmp, "w") as fh:
+        json.dump(blob, fh)
+    os.chmod(tmp, 0o600)
+    os.replace(tmp, AUTH_FILE)
+    forget_login_failures()
+
+
+def clear_password():
+    try:
+        os.unlink(AUTH_FILE)
+    except OSError:
+        pass
+    with _AUTH_LOCK:
+        _SESSIONS.clear()
+    forget_login_failures()
+
+
+def password_ok(password: str) -> bool:
+    try:
+        with open(AUTH_FILE) as fh:
+            blob = json.load(fh)
+        salt = base64.b64decode(blob["salt"])
+        want = base64.b64decode(blob["hash"])
+        rounds = int(blob.get("rounds") or PBKDF2_ROUNDS)
+    except (OSError, ValueError, KeyError, TypeError):
+        return False
+    return secrets.compare_digest(_hash(password, salt, rounds), want)
+
+
+MAX_SESSIONS = 200
+
+
+def new_session() -> str:
+    token = secrets.token_urlsafe(32)
+    now = time.time()
+    with _AUTH_LOCK:
+        if len(_SESSIONS) >= MAX_SESSIONS:
+            # Expired ones go first, then the oldest, so a login flood cannot
+            # grow this table without bound.
+            for k in [k for k, exp in _SESSIONS.items() if exp < now]:
+                _SESSIONS.pop(k, None)
+            while len(_SESSIONS) >= MAX_SESSIONS and _SESSIONS:
+                _SESSIONS.pop(next(iter(_SESSIONS)))
+        _SESSIONS[token] = now + SESSION_DAYS * 86400
+    return token
+
+
+def session_valid(token) -> bool:
+    if not token:
+        return False
+    with _AUTH_LOCK:
+        expires = _SESSIONS.get(token)
+        if not expires:
+            return False
+        if expires < time.time():
+            _SESSIONS.pop(token, None)
+            return False
+        return True
+
+
+def session_cookie(token: str, max_age: int) -> str:
+    return f"hr_session={token}; Path=/; HttpOnly; SameSite=Lax; Max-Age={max_age}"
+
+
+def login_locked_for(who: str) -> int:
+    """Seconds this caller must wait. Counted per client, so one attacker cannot
+    lock the owner out of their own app."""
+    now = time.time()
+    with _AUTH_LOCK:
+        seen = [t for t in _FAILS.get(who, []) if now - t < LOGIN_LOCK_SECONDS]
+        _FAILS[who] = seen
+        if len(seen) >= LOGIN_FAILS_MAX:
+            return int(LOGIN_LOCK_SECONDS - (now - seen[0])) + 1
+    return 0
+
+
+def note_login_failure(who: str):
+    with _AUTH_LOCK:
+        _FAILS.setdefault(who, []).append(time.time())
+
+
+def forget_login_failures():
+    """A password change or removal starts the counter over: a lockout earned
+    before the change must not keep the owner out after it."""
+    with _AUTH_LOCK:
+        _FAILS.clear()
 
 
 ENGINE = engine.Engine()
@@ -192,7 +330,7 @@ def clear_caches():
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "HardlyReading/2.6.1"
+    server_version = "HardlyReading/2.7.0"
 
     def log_message(self, fmt, *args):
         pass  # quiet
@@ -204,9 +342,16 @@ class Handler(BaseHTTPRequestHandler):
         try:
             set_local_only(local_only)
         except Exception as exc:  # noqa: BLE001
+            # The stored flag must describe the socket that actually exists,
+            # not the one the user asked for.
+            try:
+                ENGINE.settings["local_only"] = bool(listen_info().get("local_only"))
+                ENGINE.save_state()
+            except Exception:  # noqa: BLE001
+                pass
             print(f"could not switch listen address: {exc}", file=sys.stderr)
 
-    def _send(self, code, body, ctype="application/json"):
+    def _send(self, code, body, ctype="application/json", headers=None):
         if isinstance(body, (dict, list)):
             body = json.dumps(body).encode()
         elif isinstance(body, str):
@@ -215,8 +360,62 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
         self.send_header("Cache-Control", "no-store")
+        for k, v in (headers or {}).items():
+            self.send_header(k, v)
         self.end_headers()
         self.wfile.write(body)
+
+    # ---------- the optional password gate
+
+    def _cookies(self):
+        raw = self.headers.get("Cookie") or ""
+        out = {}
+        for part in raw.split(";"):
+            if "=" in part:
+                k, _, v = part.partition("=")
+                out[k.strip()] = v.strip()
+        return out
+
+    def _authed(self):
+        """True when there is no password, or this request carries a live one."""
+        if not auth_required():
+            return True
+        return session_valid(self._cookies().get("hr_session"))
+
+    def _is_local(self):
+        """True when the request came from this machine."""
+        try:
+            return self.client_address[0] in ("127.0.0.1", "::1")
+        except (AttributeError, IndexError, TypeError):
+            return False
+
+    def _who(self):
+        """Who to count login failures against."""
+        try:
+            return self.client_address[0]
+        except (AttributeError, IndexError, TypeError):
+            return "?"
+
+    # Nothing sensitive is served without the session cookie, but the app shell
+    # and the icons have to load so the gate itself can be rendered.
+    OPEN_GET = ("/", "/index.html", "/manifest.webmanifest", "/manifest.json",
+                "/sw.js", "/favicon.ico", "/api/auth")
+    OPEN_GET_PREFIX = ("/icons/", "/vendor/")
+    OPEN_POST = ("/api/login",)
+
+    def _gate(self, path, method):
+        """Returns True to continue, or sends 401/redirect itself."""
+        if not auth_required():
+            return True
+        if method == "GET":
+            if path in self.OPEN_GET or path.startswith(self.OPEN_GET_PREFIX):
+                return True
+        elif path in self.OPEN_POST:
+            return True
+        if self._authed():
+            return True
+        self._send(401, {"error": "password required", "auth": "required"})
+        return False
 
     def _html(self, name):
         p = os.path.join(HERE, name)
@@ -262,10 +461,17 @@ class Handler(BaseHTTPRequestHandler):
         except OSError:
             self._send(404, "not found", "text/plain")
 
+    MAX_BODY = 1_000_000
+
     def _body(self):
-        n = int(self.headers.get("Content-Length") or 0)
+        try:
+            n = int(self.headers.get("Content-Length") or 0)
+        except (TypeError, ValueError):
+            return {}
         if not n:
             return {}
+        if n > self.MAX_BODY:
+            raise ValueError("body too large")
         try:
             return json.loads(self.rfile.read(n))
         except ValueError:
@@ -395,6 +601,13 @@ class Handler(BaseHTTPRequestHandler):
         u = urllib.parse.urlparse(self.path)
         qs = urllib.parse.parse_qs(u.query)
         path = u.path
+
+        if not self._gate(path, "GET"):
+            return
+
+        if path == "/api/auth":
+            return self._send(200, {"required": auth_required(),
+                                    "authed": self._authed()})
 
         if path in ("/", "/index.html"):
             return self._html("index.html")
@@ -698,8 +911,14 @@ class Handler(BaseHTTPRequestHandler):
                            "desc": known_desc.get(f["name"].lower(), "")},
                 ))
             favs = ENGINE.favourites()
+            hiddens = ENGINE.hidden_keys()
+            # A library row borrows the category of the job that produced it, so
+            # filing a job files its file without keeping a second list.
+            job_cat = {j.id: j.category for j in ENGINE.jobs}
             for it in items:
                 it["fav"] = it.get("key") in favs
+                it["hidden"] = it.get("key") in hiddens
+                it["category"] = job_cat.get(it.get("job") or "", "")
             items.sort(key=lambda x: (x["series"].lower(), x["name"] or ""))
             # A missing folder is why a library can look empty when files do
             # exist elsewhere; the UI says so instead of "nothing downloaded".
@@ -727,7 +946,109 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         u = urllib.parse.urlparse(self.path)
         path = u.path
-        body = self._body()
+
+        # Authorise first: an unauthenticated caller should not be able to make
+        # the server buffer a body it is never going to read.
+        if not self._gate(path, "POST"):
+            return
+        try:
+            body = self._body()
+        except ValueError:
+            return self._send(413, {"error": "request body too large"})
+
+        if path == "/api/login":
+            who = self._who()
+            wait = login_locked_for(who)
+            if wait:
+                return self._send(429, {"error": f"too many attempts — try again in {wait}s"})
+            given = body.get("password")
+            given = given if isinstance(given, str) else ""
+            # With no password set, this simply hands out a session: the gate
+            # never appears, and the UI can call it harmlessly.
+            if (not auth_required()) or password_ok(given):
+                token = new_session()
+                forget_login_failures()
+                return self._send(200, {"ok": True, "required": auth_required()},
+                                  headers={"Set-Cookie": session_cookie(token, SESSION_DAYS * 86400)})
+            note_login_failure(who)
+            time.sleep(0.4)          # a wrong guess should not be free
+            return self._send(401, {"error": "wrong password"})
+
+        if path == "/api/logout":
+            token = self._cookies().get("hr_session")
+            with _AUTH_LOCK:
+                _SESSIONS.pop(token, None)
+            return self._send(200, {"ok": True},
+                              headers={"Set-Cookie": session_cookie("", 0)})
+
+        if path == "/api/password":
+            # With no password set the app is open to the network, so letting
+            # any caller set the first one would let a stranger claim the app
+            # and lock the owner out. First password: this machine only.
+            if not auth_required() and not self._is_local():
+                return self._send(403, {"error": "set the first password on the "
+                                                 "machine running the app"})
+            pw = body.get("password")
+            again = body.get("confirm")
+            pw = pw if isinstance(pw, str) else ""
+            again = again if isinstance(again, str) else pw
+            if pw != again:
+                return self._send(400, {"error": "the two passwords do not match"})
+            if len(pw) < MIN_PASSWORD:
+                return self._send(400, {"error": f"use at least {MIN_PASSWORD} characters"})
+            set_password(pw)
+            # Every other device is signed out; the caller gets a fresh cookie.
+            with _AUTH_LOCK:
+                _SESSIONS.clear()
+            token = new_session()
+            return self._send(200, {"ok": True, "required": True},
+                              headers={"Set-Cookie": session_cookie(token, SESSION_DAYS * 86400)})
+
+        if path == "/api/password/clear":
+            clear_password()
+            token = new_session()
+            return self._send(200, {"ok": True, "required": False},
+                              headers={"Set-Cookie": session_cookie(token, SESSION_DAYS * 86400)})
+
+        if path == "/api/hidden":
+            key = (body.get("key") or "").strip()
+            if not key:
+                return self._send(400, {"error": "no key"})
+            ENGINE.set_hidden(key, bool(body.get("hidden")))
+            return self._send(200, {"key": key, "hidden": bool(body.get("hidden"))})
+
+        if path == "/api/categories":
+            action = (body.get("action") or "").strip()
+            try:
+                if action == "add":
+                    ENGINE.add_category(body.get("name") or "")
+                elif action == "rename":
+                    ENGINE.rename_category(body.get("id") or "", body.get("name") or "")
+                elif action == "delete":
+                    ENGINE.delete_category(body.get("id") or "")
+                elif action == "pin":
+                    ENGINE.pin_category(body.get("id") or "", bool(body.get("pinned")))
+                elif action == "move":
+                    try:
+                        delta = int(body.get("delta") or 0)
+                    except (TypeError, ValueError):
+                        return self._send(400, {"error": "delta must be a number"})
+                    if not ENGINE.move_category(body.get("id") or "", delta):
+                        return self._send(409, {"error": "already at the end"})
+                else:
+                    return self._send(400, {"error": "unknown action"})
+            except ValueError as exc:
+                return self._send(409, {"error": str(exc)})
+            return self._send(200, {"categories": ENGINE.categories,
+                                    "max_pinned": ENGINE.MAX_PINNED})
+
+        if path == "/api/job/category":
+            try:
+                cid = ENGINE.set_job_category(body.get("id") or "",
+                                              (body.get("category") or "").strip())
+            except ValueError as exc:
+                return self._send(409, {"error": str(exc)})
+            return self._send(200, {"id": body.get("id"), "category": cid})
 
         if path == "/api/add":
             urls = body.get("urls") or []
@@ -742,10 +1063,12 @@ class Handler(BaseHTTPRequestHandler):
             except (TypeError, ValueError):
                 limit = 0
             want_order = str(body.get("order") or "oldest").lower()
+            category = str(body.get("category") or "")
             added, errors = [], []
             for url in urls:
                 try:
-                    added.append(ENGINE.add(url, limit=limit, want_order=want_order))
+                    added.append(ENGINE.add(url, limit=limit, want_order=want_order,
+                                            category=category))
                 except Exception as e:  # noqa: BLE001
                     errors.append({"url": url, "error": str(e)})
             return self._send(200, {"added": added, "errors": errors})

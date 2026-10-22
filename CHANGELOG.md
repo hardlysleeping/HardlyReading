@@ -3,6 +3,44 @@
 Notable changes to HardlyReading. Versions are tagged on GitHub with matching
 release notes.
 
+## [2.7.0] — 2026-10-22
+
+### Added
+
+- **A password for the app, off by default.** Set one in Settings and every API
+  call needs a signed-in session; the page shell and `/api/auth` stay open so the
+  unlock box can draw. The hash is PBKDF2-SHA256, 200,000 rounds, in its own
+  `auth.json` with mode `0600` — never in `state.json`, which the browser reads.
+  Sessions live in memory, so a restart signs every device out. Five wrong
+  guesses lock that client for 30 seconds, counted per address. The first
+  password can only be set from the machine running the app; otherwise whoever
+  reached an open port first could claim it.
+- **Local only.** A Settings toggle that moves the listener between loopback and
+  all interfaces without a restart, so a toggle cannot interrupt the queue.
+- **Categories for the queue and the library.** Two scrolling strips, one per
+  list, with up to three pinned first, reordering, renaming and deletion that
+  never touches files or jobs. A library file borrows the category of the job
+  that produced it. New links land in the selected tab's category.
+- **Hidden items.** Right-click a library row (long-press on a phone) to file it
+  away without deleting anything; the eye in the toolbar cycles hidden-only,
+  dimmed and visible.
+
+### Fixed
+
+- **An empty category tab broke the library.** The branch used `catTab`, which
+  only exists inside the strip renderer, so selecting a category with no files
+  threw `ReferenceError` and the list never repainted. It is `catTabLib` now.
+- **"Local only" could fail open.** If the loopback bind ran out of retries, the
+  fallback opened the port on all interfaces — the opposite of what was asked.
+  It now reopens loopback or leaves nothing listening, and the setting is
+  reverted so it matches the socket that actually exists.
+- **Unauthenticated bodies were read before the gate**, with no size limit, so
+  an open port could be made to buffer anything. The gate runs first and bodies
+  over 1 MB are refused with 413 without being read.
+- **Renaming a category to a name already in use** was allowed, leaving two tabs
+  with the same label; it is rejected the same way adding one is.
+- Filing a job refreshed only the library strip instead of both.
+
 ## [2.6.1] — 2026-10-21
 
 ### Fixed
@@ -652,6 +690,7 @@ First release.
 - Built-in CBZ / CBR / PDF reader; CBR needs `unrar`, `bsdtar` or `7z`
 - Cross-platform launcher that finds `aria2c` and opens the browser
 
+[2.7.0]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.7.0
 [2.6.1]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.6.1
 [2.6.0]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.6.0
 [2.5.2]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.5.2

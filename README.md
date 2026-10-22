@@ -436,10 +436,76 @@ The gear in the header opens a panel; changes save as you edit and persist in
 | Files at once (total) | 12 | Shared by the jobs running, so two jobs is about six files each, not 24. |
 | Keep free | 256 MB | Space a download must leave on the disk. A job pauses before it eats into this. |
 | Pause between jobs | 30s | Gap between one job finishing and the next starting, per worker. |
+| Local only | **off** | Off: also reachable from other devices on the network. On: this computer only. Applied immediately; if the loopback bind fails it says so and the setting is reverted rather than falling back to all interfaces. |
+| Password | **none** | Optional. Typed twice to set, with a reveal button. See below. |
 | Disk | — | Used/free for the download folder, cache size, and **Clear** for cached covers and streamed pages. |
 
 Job cards can be **cancelled** before they start and **removed** from the list,
 and library items can be **deleted** (file plus its reading position).
+
+## Password
+
+Off by default: with no password the app opens for anyone who can reach the port,
+which is the point when it is your own machine on your own network.
+
+**Settings → Password** to set one. It is typed twice, with an eye button if you
+want to see what you are typing. The *first* password can only be set from the
+machine running the app — otherwise whoever reached the open port first could
+claim it and lock you out. Once set:
+
+- every API call needs a signed-in session; the page shell still loads, so the
+  unlock box can be drawn
+- sessions live in memory, so restarting the app signs every device out again
+- five wrong guesses from one client locks **that client** out for 30 seconds —
+  per client, so a stranger cannot lock you out of your own app
+- changing or removing the password resets that counter
+- the password itself is never stored: `auth.json` holds a salted
+  PBKDF2-SHA256 hash (200,000 rounds), mode `0600`
+- removing it puts the app straight back to open
+
+## Hiding items
+
+Right-click any library row (long-press on a phone), or use **Hide** in the row's
+detail, to file an item away. Nothing is deleted — the file stays on disk and it
+still counts in "N files" — it just stays out of the way.
+
+The eye in the library toolbar has three states, no caption:
+
+| Eye | What is listed |
+|---|---|
+| closed | everything except hidden items |
+| half-lidded | everything, with hidden items dimmed |
+| open | only hidden items |
+
+Right-click again to bring an item back.
+
+## Categories
+
+There are two strips, each filtering its own list, and they scroll sideways when
+there are more than fit:
+
+- **Queue** — filters jobs. Adding links while a category tab is selected files
+  the new jobs under that category; from All or Uncategorized they arrive
+  uncategorized.
+- **Library** — filters files. A file takes the category of the job that produced
+  it, so filing the job files the file.
+
+Everything starts **uncategorized**: no categories exist until you make one.
+Either strip's **✎** opens the same edit mode — type a name and press Enter to
+add; each category then shows a flag (pin), its name (editable — Enter or click
+away saves), ◀ ▶ to move it, and ✕ to delete.
+
+- **Up to three can be pinned**, always first, in the order you pinned them, and
+  they keep that order when you move them with ◀ ▶. A fourth pin is refused
+  rather than silently dropped, and an unpinned category cannot be moved above a
+  pinned one.
+- **Every job card in the queue has a Category menu** for filing it later.
+- Files already on disk with no queue job behind them (scanned from the folder)
+  stay uncategorized: there is no job to take a category from.
+- Deleting a category never deletes anything — its jobs go back to
+  uncategorized, and the confirm says so first.
+
+The list lives in `state.json`, so it survives a restart.
 
 ## Environment overrides
 
@@ -529,10 +595,12 @@ downloading.
 python3 -m unittest discover -s tests -v
 ```
 
-28 offline tests: the shared file budget, the 1–4 job clamp, queue reordering
+49 offline tests: the shared file budget, the 1–4 job clamp, queue reordering
 (including the refusal to reorder a running job), resume semantics, byte-safe
-filenames, the deep-paging fallback, disk reporting, cache clearing and saved
-reading positions. They run against a temporary config and library folder —
+filenames, the deep-paging fallback, disk reporting, cache clearing, saved
+reading positions, the password gate over real HTTP (401s, login, cookies,
+oversized bodies), the per-client lockout, and the category and hidden-item
+rules. They run against a temporary config and library folder —
 never yours — and touch no network; requests are stubbed at the module boundary.
 
 The same suite runs on Linux, Windows and macOS in CI. That is the only claim

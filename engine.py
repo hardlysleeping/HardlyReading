@@ -146,7 +146,7 @@ def http_json(url: str, timeout: int = 60):
     """GET a URL and return parsed JSON. No retry here — callers that can
     recover (the resolver, the per-item probe) do their own attempts."""
 
-    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/2.6.1"})
+    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/2.7.0"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.load(r)
 
@@ -184,6 +184,9 @@ class Job:
     # Files downloading right now, keyed by aria2's gid. A job runs several at
     # once (-j), so one percentage for the whole job hides what is happening.
     live: dict = field(default_factory=dict)
+    # What the user filed this job under. "" is uncategorised, and that is what
+    # everything is until someone says otherwise.
+    category: str = ""
     created: float = field(default_factory=time.time)
     updated: float = field(default_factory=time.time)
 
@@ -213,6 +216,7 @@ class Job:
             "scoped_query": self.scoped_query,
             "dir": self.dir,
             "series": self.series,
+            "category": self.category,
             # How many issues were asked for, from which end, and how many the
             # listing offered — so the card can say "the newest 25 of 312".
             "limit": self.limit, "want_order": self.want_order,
@@ -785,6 +789,10 @@ class Engine:
         }
         self._worker = None
         self._conn = None
+        # Queue categories: labels the user makes. The order here IS the tab
+        # order, with pinned ones kept at the front. Empty by default — every
+        # job is uncategorised until someone says otherwise.
+        self.categories: list = []
         self._lock_db = threading.Lock()
         self._load_state()
         # Jobs queued before descriptions were stored have none. Fill them in
@@ -900,6 +908,31 @@ WantedBy=default.target
         except Exception:
             return set()
 
+    def hidden_keys(self) -> set:
+        """Book keys filed away — still in the library, just not shown."""
+        try:
+            conn = self._db()
+            if not conn:
+                return set()
+            return {r[0] for r in conn.execute("SELECT book FROM hidden")}
+        except Exception:
+            return set()
+
+    def set_hidden(self, book_key: str, on: bool):
+        try:
+            conn = self._db()
+            if not conn:
+                return
+            with self._lock_db:
+                if on:
+                    conn.execute("INSERT OR REPLACE INTO hidden (book, added) "
+                                 "VALUES (?,?)", (book_key, time.time()))
+                else:
+                    conn.execute("DELETE FROM hidden WHERE book=?", (book_key,))
+                conn.commit()
+        except Exception:
+            pass
+
     def set_favourite(self, book_key: str, on: bool):
         try:
             conn = self._db()
@@ -995,6 +1028,12 @@ WantedBy=default.target
         except (OSError, ValueError):
             return
         self.settings.update(d.get("settings") or {})
+        # Categories are just labels; a corrupt entry is dropped rather than
+        # taking the queue with it.
+        for c in (d.get("categories") or []):
+            if isinstance(c, dict) and c.get("id") and c.get("name"):
+                self.categories.append({"id": str(c["id"]), "name": str(c["name"]),
+                                        "pinned": bool(c.get("pinned"))})
         for jd in d.get("jobs", []):
             try:
                 j = Job(**{k: v for k, v in jd.items()
@@ -1058,6 +1097,13 @@ WantedBy=default.target
                     desc    TEXT NOT NULL DEFAULT '',
                     updated REAL NOT NULL
                 )""")
+            # Items the user has filed away: kept in the library data, dropped
+            # from the default view. Same key as favourites.
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS hidden (
+                    book    TEXT PRIMARY KEY,
+                    added   REAL NOT NULL
+                )""")
             conn.commit()
             self._conn = conn
         except Exception:  # noqa: BLE001
@@ -1108,6 +1154,7 @@ WantedBy=default.target
                  # a restart separately from the jobs themselves.
                  "order": [jid for jid in self.order
                            if any(j.id == jid for j in self.jobs)],
+                 "categories": self.categories,
                  "jobs": [asdict(j) for j in self.jobs]}
             tmp = STATE_FILE + ".tmp"
             try:
@@ -1120,8 +1167,109 @@ WantedBy=default.target
                 # in memory and the next save will retry.
                 pass
 
+    # ---- categories
+
+    MAX_PINNED = 3
+
+    def _cat_slug(self, name: str) -> str:
+        base = re.sub(r"[^a-z0-9]+", "-", name.strip().lower()).strip("-") or "category"
+        taken = {c["id"] for c in self.categories}
+        if base not in taken:
+            return base
+        n = 2
+        while f"{base}-{n}" in taken:
+            n += 1
+        return f"{base}-{n}"
+
+    def _cats_normalised(self):
+        """Pinned first, otherwise the order the user arranged. The sort is
+        stable, so each group keeps its own internal order."""
+        self.categories.sort(key=lambda c: 0 if c.get("pinned") else 1)
+
+    def add_category(self, name: str):
+        name = (name or "").strip()
+        if not name:
+            raise ValueError("a category needs a name")
+        if any(c["name"].lower() == name.lower() for c in self.categories):
+            raise ValueError("that category already exists")
+        cat = {"id": self._cat_slug(name), "name": name, "pinned": False}
+        self.categories.append(cat)
+        self.save_state()
+        return cat
+
+    def rename_category(self, cid: str, name: str):
+        name = (name or "").strip()
+        if not name:
+            raise ValueError("a category needs a name")
+        # The same rule as add: two tabs with one name are a bug, not a feature.
+        if any(c["id"] != cid and c["name"].lower() == name.lower()
+               for c in self.categories):
+            raise ValueError("that category already exists")
+        for c in self.categories:
+            if c["id"] == cid:
+                c["name"] = name
+                self.save_state()
+                return c
+        raise ValueError("no such category")
+
+    def delete_category(self, cid: str):
+        """Deleting a category never deletes a job: those jobs go back to
+        uncategorised."""
+        before = len(self.categories)
+        self.categories = [c for c in self.categories if c["id"] != cid]
+        if len(self.categories) == before:
+            raise ValueError("no such category")
+        for j in self.jobs:
+            if j.category == cid:
+                j.category = ""
+        self.save_state()
+        return True
+
+    def pin_category(self, cid: str, on: bool):
+        cat = next((c for c in self.categories if c["id"] == cid), None)
+        if not cat:
+            raise ValueError("no such category")
+        if on and not cat.get("pinned"):
+            if sum(1 for c in self.categories if c.get("pinned")) >= self.MAX_PINNED:
+                raise ValueError(f"only {self.MAX_PINNED} categories can be pinned")
+            cat["pinned"] = True
+        elif not on:
+            cat["pinned"] = False
+        self._cats_normalised()
+        self.save_state()
+        return cat
+
+    def move_category(self, cid: str, delta: int):
+        idx = next((i for i, c in enumerate(self.categories) if c["id"] == cid), None)
+        if idx is None:
+            raise ValueError("no such category")
+        j = idx + delta
+        if j < 0 or j >= len(self.categories):
+            return False
+        before = [c["id"] for c in self.categories]
+        self.categories[idx], self.categories[j] = self.categories[j], self.categories[idx]
+        # Pinned first is a rule, not a preference: a swap that would push an
+        # unpinned category above a pinned one is undone, and reported as "no
+        # move" rather than claiming to have done something.
+        self._cats_normalised()
+        if [c["id"] for c in self.categories] == before:
+            return False
+        self.save_state()
+        return True
+
+    def set_job_category(self, jid: str, cid: str):
+        if cid and not any(c["id"] == cid for c in self.categories):
+            raise ValueError("no such category")
+        j = self.get(jid)
+        if not j:
+            raise ValueError("no such job")
+        j.category = cid or ""
+        j.updated = time.time()
+        self.save_state()
+        return j.category
+
     # ---- queue
-    def add(self, url: str, limit: int = 0, want_order: str = "oldest"):
+    def add(self, url: str, limit: int = 0, want_order: str = "oldest", category: str = ""):
         c = classify_url(url)
         if not c:
             raise ValueError("Empty link")
@@ -1130,13 +1278,16 @@ WantedBy=default.target
         # URL is already exactly one issue.
         limit = max(0, int(limit or 0))
         want_order = "newest" if str(want_order).lower().startswith("new") else "oldest"
+        # New jobs are uncategorised unless the tab you added from asked for a
+        # category. An id that no longer exists would be a dangling label.
+        category = category if any(c2["id"] == category for c2 in self.categories) else ""
         with self.lock:
             for j in self.jobs:
                 if j.status != "cancelled" and j.query == query and j.kind == kind:
                     raise ValueError("Already in the list")
             job = Job(id=uuid.uuid4().hex[:12], kind=kind, source=url,
                       label=label or query, query=query,
-                      limit=limit, want_order=want_order)
+                      limit=limit, want_order=want_order, category=category)
             self.jobs.append(job)
             self.order.append(job.id)
             self.save_state()
@@ -1198,6 +1349,10 @@ WantedBy=default.target
                 "paused": self.paused,
                 "busy": bool(self.running),
                 "settings": dict(self.settings),
+                # Tab order as the user arranged it; pinned ones are already
+                # first because pinning re-sorts the list.
+                "categories": [dict(c) for c in self.categories],
+                "max_pinned": self.MAX_PINNED,
                 # The UI shows this when the folder field is left empty, so an
                 # empty box is explained instead of looking like "no folder".
                 "download_default": default_download_dir(),
