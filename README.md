@@ -191,6 +191,11 @@ download queue. To keep it on this machine only:
 python run.py --host 127.0.0.1     # or IA_HOST=127.0.0.1 python run.py
 ```
 
+There is also a switch: **Settings → Access → "Local only"**. It applies
+immediately (the listener is swapped in place, no restart, the queue is
+untouched) and it is remembered for the next start. Turning it on cuts off any
+other device, including the phone you may be holding.
+
 `run.py` checks your Python, finds aria2c, and tells you exactly what to install
 if anything is missing — it will not half-start.
 
@@ -517,6 +522,22 @@ fetches what is actually missing. The checksum index is cached in
 Internet Archive hosts material under a wide range of rights. Downloading
 something does not give you the right to redistribute it. Check what you are
 downloading.
+
+## Tests
+
+```sh
+python3 -m unittest discover -s tests -v
+```
+
+28 offline tests: the shared file budget, the 1–4 job clamp, queue reordering
+(including the refusal to reorder a running job), resume semantics, byte-safe
+filenames, the deep-paging fallback, disk reporting, cache clearing and saved
+reading positions. They run against a temporary config and library folder —
+never yours — and touch no network; requests are stubbed at the module boundary.
+
+The same suite runs on Linux, Windows and macOS in CI. That is the only claim
+this project makes about those platforms: the code paths are exercised there,
+not hand-tested.
 
 ## Changelog
 

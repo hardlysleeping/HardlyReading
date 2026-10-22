@@ -566,6 +566,16 @@
         </label>
         <div class="hint" id="autostartHint" style="margin:2px 0 6px"></div>
 
+        <div class="sgroup">Access</div>
+        <label class="rowchk">
+          <input type="checkbox" id="set_local_only">
+          <span><b>Local only — don't listen on the network</b>
+            <em>Off: this page also opens from your phone or tablet on the same
+            network, with no password. On: only this computer. Switching this on
+            cuts off any other device — including the one you are holding.</em></span>
+        </label>
+        <div class="hint" id="listenHint" style="margin:2px 0 6px"></div>
+
         <div class="sgroup">Downloads</div>
         <label class="rowchk">
           <input type="checkbox" id="set_preview">
@@ -2714,6 +2724,7 @@ const SETTING_FIELDS = {
   between_jobs:    {id:"set_between_jobs",    type:"int",   def:30, min:0, max:600},
   parallel_jobs:   {id:"set_parallel_jobs",   type:"int",   def:2,  min:1, max:4},
   space_reserve_mb:{id:"set_space_reserve_mb",type:"int",   def:256,min:0, max:100000},
+  local_only:      {id:"set_local_only",      type:"bool",  def:false},
 };
 
 function fillSettings(settings){
@@ -2725,7 +2736,22 @@ function fillSettings(settings){
   }
   explainDownloadDir(settings);
   explainParallel(settings);
+  explainListen();
   refreshDisk();
+}
+
+/* Where this page can be reached from, straight from the server's listener. */
+function explainListen(){
+  const hint = $("listenHint");
+  if(!hint) return;
+  const L = (lastState && lastState.listen) || null;
+  if(!L || !L.urls || !L.urls.length){ hint.textContent = ""; return; }
+  // URLs come from the server's own listener info (host:port), and each is
+  // escaped before being placed in the markup.
+  const urls = L.urls.map(u => `<code>${esc(u)}</code>`).join(" ");
+  hint.innerHTML = L.local_only
+    ? `This computer only: ${urls}`
+    : `Reachable on the network: ${urls}`;
 }
 
 /* "Files per job" is a total, not a per-job number once jobs run together. */
@@ -2828,6 +2854,8 @@ function saveSettings(immediate){
         body: JSON.stringify(readSettings())
       });
       if(lastState) lastState.settings = r.settings;
+      if(lastState && r.listen) lastState.listen = r.listen;
+      explainListen();
       const saved = $("settingsSaved");
       if(saved){ saved.textContent = "Saved"; saved.classList.add("on");
                  setTimeout(()=>saved.classList.remove("on"), 1200); }

@@ -3,7 +3,18 @@
 Notable changes to HardlyReading. Versions are tagged on GitHub with matching
 release notes.
 
-## [2.6.0] — 2026-10-21
+## [2.6.1] — 2026-10-21
+
+### Added
+
+- **A test suite** (`tests/test_engine.py`, 28 tests, no network, temp folders
+  only) covering the shared file budget, job clamping, queue reordering, resume,
+  filename sanitising, deep-paging fallback, disk reporting, caches and reading
+  positions.
+- **CI on Linux, Windows and macOS** (Python 3.10 and 3.13) so the cross-platform
+  paths are exercised rather than asserted.
+
+
 
 ### Added
 

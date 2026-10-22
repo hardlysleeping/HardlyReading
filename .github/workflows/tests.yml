@@ -1,0 +1,33 @@
+name: tests
+
+on:
+  push:
+    branches: [master]
+    paths-ignore: ["docs/**", "**.md"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    name: ${{ matrix.os }} · py${{ matrix.python }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+        python: ["3.10", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+
+      - name: Import both modules
+        run: python -c "import engine, server; print(engine.default_download_dir())"
+
+      - name: Unit tests
+        run: python -m unittest discover -s tests -v
+        env:
+          PYTHONUTF8: "1"
+          PYTHONIOENCODING: utf-8

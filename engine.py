@@ -136,7 +136,7 @@ def http_json(url: str, timeout: int = 60):
     """GET a URL and return parsed JSON. No retry here — callers that can
     recover (the resolver, the per-item probe) do their own attempts."""
 
-    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/2.6.0"})
+    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/2.6.1"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.load(r)
 
@@ -769,6 +769,9 @@ class Engine:
             # How many jobs may download at the same time. Two by default: it
             # keeps the network busy without turning the machine into a heater.
             "parallel_jobs": 2,
+            # Listen on loopback only. Off = reachable from the phone/tablet on
+            # the same network (no password). Toggled live from Settings.
+            "local_only": False,
         }
         self._worker = None
         self._conn = None

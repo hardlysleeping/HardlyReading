@@ -20,6 +20,8 @@ import shutil
 import socket
 import subprocess
 import sys
+import threading
+import time
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -60,6 +62,65 @@ def network_ips():
             if ip not in ips:
                 ips.append(ip)
     return ips
+
+
+# ------------------------------------------------------------- listening
+# The listener is swappable: Settings can move it between "all interfaces" and
+# loopback without restarting the app, so a toggle cannot interrupt the queue.
+
+_LISTEN = {"srv": None, "thread": None, "host": None, "port": None}
+_LISTEN_LOCK = threading.Lock()
+
+
+def _listen_urls(host, port):
+    if host in ("0.0.0.0", "::"):
+        return [f"http://127.0.0.1:{port}"] + [f"http://{ip}:{port}" for ip in network_ips()]
+    return [f"http://{host}:{port}"]
+
+
+def listen_info():
+    host, port = _LISTEN["host"], _LISTEN["port"]
+    return {
+        "host": host,
+        "port": port,
+        "local_only": host in ("127.0.0.1", "::1"),
+        "urls": _listen_urls(host, port) if port else [],
+    }
+
+
+def _open_listener(host, port):
+    srv = ThreadingHTTPServer((host, port), Handler)
+    t = threading.Thread(target=srv.serve_forever, name="http-listener", daemon=True)
+    t.start()
+    _LISTEN.update(srv=srv, thread=t, host=host, port=port)
+    return srv
+
+
+def set_local_only(local_only):
+    """Move the listener between loopback and all interfaces, live."""
+    host = "127.0.0.1" if local_only else "0.0.0.0"
+    with _LISTEN_LOCK:
+        if _LISTEN["host"] == host:
+            return listen_info()
+        port = _LISTEN["port"]
+        old = _LISTEN["srv"]
+        if old is not None:
+            old.shutdown()
+            old.server_close()
+        # The closed socket can hold the port for a moment; retry rather than
+        # leave the app with no listener at all.
+        last = None
+        for _ in range(60):
+            try:
+                _open_listener(host, port)
+                break
+            except OSError as exc:
+                last = exc
+                time.sleep(0.05)
+        else:
+            _open_listener("0.0.0.0" if local_only else "127.0.0.1", port)
+            raise RuntimeError(f"could not switch listen address: {last}")
+        return listen_info()
 
 
 ENGINE = engine.Engine()
@@ -131,12 +192,20 @@ def clear_caches():
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "HardlyReading/2.6.0"
+    server_version = "HardlyReading/2.6.1"
 
     def log_message(self, fmt, *args):
         pass  # quiet
 
     # ---------- helpers
+    @staticmethod
+    def _apply_listen(local_only):
+        """Swap the listener after the response has gone out."""
+        try:
+            set_local_only(local_only)
+        except Exception as exc:  # noqa: BLE001
+            print(f"could not switch listen address: {exc}", file=sys.stderr)
+
     def _send(self, code, body, ctype="application/json"):
         if isinstance(body, (dict, list)):
             body = json.dumps(body).encode()
@@ -349,7 +418,9 @@ class Handler(BaseHTTPRequestHandler):
             return self._asset(os.path.join("icons", name), "image/png")
 
         if path == "/api/state":
-            return self._send(200, ENGINE.snapshot())
+            st = ENGINE.snapshot()
+            st["listen"] = listen_info()
+            return self._send(200, st)
 
         if path == "/api/covered":
             return self._send(200, {"covered": ENGINE.covered()})
@@ -752,6 +823,8 @@ class Handler(BaseHTTPRequestHandler):
                             v = max(1, min(64, int(v)))
                         except (TypeError, ValueError):
                             continue
+                    if k == "local_only":
+                        v = bool(v)
                     ENGINE.settings[k] = v
                 ENGINE.save_state()
             # A new parallelism only matters if the pool is resized now.
@@ -761,8 +834,26 @@ class Handler(BaseHTTPRequestHandler):
             st = ENGINE.autostart_state()
             if st != "unsupported":
                 ENGINE.settings["autostart"] = (st == "on")
+
+            # Loopback vs network is applied live. The reply goes out first and
+            # the listener is swapped just after, so the request that asked for
+            # the change is not the one that gets dropped.
+            info = listen_info()
+            want_local = bool(ENGINE.settings.get("local_only"))
+            if info["port"] and want_local != info["local_only"]:
+                new_host = "127.0.0.1" if want_local else "0.0.0.0"
+                info = {
+                    "host": new_host,
+                    "port": info["port"],
+                    "local_only": want_local,
+                    "urls": _listen_urls(new_host, info["port"]),
+                    "applying": True,
+                }
+                threading.Timer(0.3, self._apply_listen, args=(want_local,)).start()
+
             return self._send(200, {"settings": ENGINE.settings,
-                                    "autostart_state": st})
+                                    "autostart_state": st,
+                                    "listen": info})
 
         if path == "/api/pause":
             ENGINE.paused = bool(body.get("paused"))
@@ -862,17 +953,22 @@ def main():
         return default
 
     want = int(opt("--port", os.environ.get("IA_PORT", "8788")))
-    # Default to every interface so the UI is reachable from the phone and the
-    # tablet. Pass --host 127.0.0.1 (or IA_HOST=127.0.0.1) for local-only.
-    host = opt("--host", os.environ.get("IA_HOST", "0.0.0.0"))
+    # Precedence: --host, then IA_HOST, then the saved setting. The default is
+    # every interface so the UI opens from the phone and tablet.
+    if "--host" in argv:
+        host = opt("--host", "0.0.0.0")
+    elif os.environ.get("IA_HOST"):
+        host = os.environ["IA_HOST"]
+    else:
+        host = "127.0.0.1" if ENGINE.settings.get("local_only") else "0.0.0.0"
     no_browser = "--no-browser" in argv
 
     port = find_free_port(want, host)
     # The unit this app writes must start the server the same way, port
     # included, or "start on boot" would answer on a different address.
     ENGINE.port = port
-    srv = ThreadingHTTPServer((host, port), Handler)
-    url = f"http://{'127.0.0.1' if host in ('0.0.0.0', '::') else host}:{port}"
+    _open_listener(host, port)
+    url = f"http://127.0.0.1:{port}"
 
     # Resume anything interrupted by the last shutdown, and start the worker so
     # a job that was mid-download actually continues.
@@ -884,6 +980,8 @@ def main():
         for ip in network_ips():
             print(f"    http://{ip}:{port}")
         print("  no authentication — anyone who can reach it controls the queue.")
+    else:
+        print("  local only: this computer, not the network.")
 
     if not no_browser:
         try:
@@ -893,10 +991,13 @@ def main():
             pass
 
     try:
-        srv.serve_forever()
+        # The listener runs in its own thread so Settings can swap it live.
+        threading.Event().wait()
     except KeyboardInterrupt:
         print("\nstopping")
-        srv.shutdown()
+        with _LISTEN_LOCK:
+            if _LISTEN["srv"] is not None:
+                _LISTEN["srv"].shutdown()
 
 
 if __name__ == "__main__":
