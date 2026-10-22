@@ -20,7 +20,7 @@ release notes.
 - **CI on Linux, Windows and macOS** (Python 3.10 and 3.13) so the cross-platform
   paths are exercised rather than asserted.
 
-
+## [2.6.0] — 2026-10-21
 
 ### Added
 
@@ -43,7 +43,7 @@ release notes.
   back to `%USERPROFILE%\Documents`.
 - The status header could only describe one running job.
 
-
+## [2.5.2] — 2026-10-21
 
 ### Fixed
 
@@ -61,7 +61,7 @@ release notes.
 - `space_reserve_mb` existed in code but not in the settings, so it could not be
   changed through the API at all.
 
-
+## [2.5.1] — 2026-10-21
 
 ### Changed
 
@@ -70,7 +70,7 @@ release notes.
 - New screenshot of the **How many** / **starting from** picker, linked from the
   README section that explains it.
 
-
+## [2.5.0] — 2026-10-21
 
 ### Added
 
@@ -105,7 +105,7 @@ release notes.
 - An optimistic reorder repainted the new numbers onto the old order, so a card
   could show `#2` while sitting first.
 
-
+## [2.4.3] — 2026-10-20
 
 ### Changed
 
@@ -119,7 +119,7 @@ release notes.
   grid, library list with an open detail panel, the finished queue, and the PDF
   reader.
 
-
+## [2.4.2] — 2026-10-20
 
 ### Fixed
 
@@ -130,7 +130,7 @@ release notes.
 - `rows` was clamped to a minimum of 10, so a caller asking for 3 got 10. It
   honours 1–100 now.
 
-
+## [2.4.1] — 2026-10-20
 
 ### Fixed
 
@@ -143,7 +143,7 @@ release notes.
   card, grid card or search card toggled it, including the click that ends a
   text selection. Those handlers ignore a click while text is selected.
 
-
+## [2.4.0] — 2026-10-20
 
 ### Added
 
@@ -168,7 +168,7 @@ release notes.
   that it is unsupported rather than pretending; the queue and partial downloads
   still survive a restart.
 
-
+## [2.3.0] — 2026-10-20
 
 ### Added
 
@@ -187,7 +187,7 @@ release notes.
 - `/api/thumb` takes a width (`w`), clamped to 64–320 px, so one endpoint serves
   both the 34 px list row and the 220 px grid tile.
 
-
+## [2.2.1] — 2026-10-20
 
 ### Added
 
@@ -197,7 +197,7 @@ release notes.
   Optional by design: the binary is not bundled, and without it the row keeps
   its placeholder instead of showing a broken image.
 
-
+## [2.2.0] — 2026-10-20
 
 ### Changed
 
@@ -212,7 +212,7 @@ release notes.
   divider, and "Add all results" is a secondary-size button rather than the
   largest control in the header.
 
-
+## [2.1.10] — 2026-10-20
 
 ### Changed
 
@@ -225,7 +225,7 @@ release notes.
 - Remove is a single ✕ icon; there were two remove buttons on the same card, one
   labelled and one not.
 
-
+## [2.1.9] — 2026-10-20
 
 ### Added
 
@@ -247,7 +247,7 @@ release notes.
 - `queueRows()` read the global snapshot instead of the state it was given, and
   the four status buckets overlapped, which rendered the same card twice.
 
-
+## [2.1.8] — 2026-10-20
 
 ### Added
 
@@ -261,7 +261,7 @@ release notes.
 - The queue resolver writes to the same index, so a book downloaded after the
   fact carries the description the search card showed.
 
-
+## [2.1.7] — 2026-10-20
 
 ### Added
 
@@ -283,7 +283,7 @@ release notes.
   for this item on archive.org* — instead of showing an empty panel that reads
   like a bug.
 
-
+## [2.1.6] — 2026-10-20
 
 ### Fixed
 
@@ -652,6 +652,21 @@ First release.
 - Built-in CBZ / CBR / PDF reader; CBR needs `unrar`, `bsdtar` or `7z`
 - Cross-platform launcher that finds `aria2c` and opens the browser
 
+[2.6.1]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.6.1
+[2.6.0]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.6.0
+[2.5.2]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.5.2
+[2.5.1]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.5.1
+[2.5.0]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.5.0
+[2.4.3]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.4.3
+[2.4.2]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.4.2
+[2.4.1]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.4.1
+[2.4.0]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.4.0
+[2.3.0]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.3.0
+[2.2.1]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.2.1
+[2.2.0]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.2.0
+[2.1.10]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.1.10
+[2.1.9]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.1.9
+[2.1.8]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.1.8
 [2.1.7]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.1.7
 [2.1.6]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.1.6
 [2.1.5]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.1.5
