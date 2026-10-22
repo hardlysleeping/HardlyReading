@@ -3,6 +3,17 @@
 Notable changes to HardlyReading. Versions are tagged on GitHub with matching
 release notes.
 
+## [2.7.3] — 2026-10-22
+
+### Fixed
+
+- **The unlock overlay covered the app even when no password was set.**
+  `.gate{display:flex}` beat the `hidden` attribute because no `.gate[hidden]`
+  rule existed, so the lock screen sat over the queue and library for everyone
+  from 2.7.0 onward, with no password to type. It is hidden now, and a test
+  fails if any class that sets `display` is ever used on a hidden element
+  without a matching `[hidden]` rule.
+
 ## [2.7.2] — 2026-10-22
 
 ### Fixed
@@ -710,6 +721,7 @@ First release.
 - Built-in CBZ / CBR / PDF reader; CBR needs `unrar`, `bsdtar` or `7z`
 - Cross-platform launcher that finds `aria2c` and opens the browser
 
+[2.7.3]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.7.3
 [2.7.2]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.7.2
 [2.7.1]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.7.1
 [2.7.0]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.7.0

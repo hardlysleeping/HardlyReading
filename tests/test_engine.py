@@ -9,6 +9,7 @@ import atexit
 import http.client
 import json
 import os
+import re
 import shutil
 import stat
 import sys
@@ -527,6 +528,30 @@ class ListenTest(unittest.TestCase):
         self.assertTrue(h._is_local())
         h.client_address = ("10.0.0.7", 5000)
         self.assertFalse(h._is_local())
+
+
+class HiddenCssTest(unittest.TestCase):
+    """A class that sets `display` beats the `hidden` attribute, which is how the
+    unlock overlay ended up covering an app that had no password."""
+
+    def test_every_hidden_element_has_a_hidden_rule(self):
+        html = open(os.path.join(ROOT, "index.html")).read()
+        css = "\n".join(re.findall(r"<style>(.*?)</style>", html, re.S))
+        classes = set()
+        for tag in re.finditer(r"<[a-z]+[^>]*\bhidden\b[^>]*>", html):
+            m = re.search(r'class="([^"]+)"', tag.group(0))
+            if m:
+                classes.update(m.group(1).split())
+        rules = re.findall(r"([^{}]+)\{([^{}]*)\}", css)
+        offenders = []
+        for cls in classes:
+            sets_display = any(
+                "display:" in body and any(sel.strip() == f".{cls}" for sel in selector.split(","))
+                for selector, body in rules
+            )
+            if sets_display and f".{cls}[hidden]" not in css:
+                offenders.append(cls)
+        self.assertEqual(offenders, [], "classes needing a [hidden] rule")
 
 
 if __name__ == "__main__":

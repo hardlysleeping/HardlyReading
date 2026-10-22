@@ -528,6 +528,9 @@
   /* ---------- password gate ---------- */
   .gate{position:fixed;inset:0;z-index:80;background:var(--bg);
         display:flex;align-items:center;justify-content:center;padding:22px}
+  /* The element carries `hidden` until a password exists; without this rule the
+     flex display above wins and the lock screen covers the app regardless. */
+  .gate[hidden]{display:none}
   .gatebox{width:100%;max-width:340px;background:var(--panel);border:1px solid var(--line);
            border-radius:14px;padding:18px}
   .gatebox h2{margin:0 0 2px;font-size:17px}
