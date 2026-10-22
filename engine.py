@@ -126,7 +126,7 @@ def http_json(url: str, timeout: int = 60):
     """GET a URL and return parsed JSON. No retry here — callers that can
     recover (the resolver, the per-item probe) do their own attempts."""
 
-    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/2.5.1"})
+    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/2.5.2"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.load(r)
 
@@ -748,6 +748,10 @@ class Engine:
             "show_brand": True,
             # Installed as a user service when switched on; off unless asked.
             "autostart": False,
+            # Free space kept back so a download cannot fill the disk. Belongs
+            # here rather than as a constant so it can be tuned per install
+            # (the settings API only accepts keys that already exist).
+            "space_reserve_mb": SPACE_RESERVE_MB,
         }
         self._worker = None
         self._conn = None
@@ -1500,20 +1504,26 @@ WantedBy=default.target
         reserve = int(self.settings.get("space_reserve_mb", SPACE_RESERVE_MB)) * 1024 * 1024
         while pending:
             free = free_bytes(dest)
+            # 0 means "could not tell" (a permission problem, an odd filesystem),
+            # not "no room". Refusing to download because the check failed would
+            # read as a full disk that is not full — let aria2 decide instead.
+            check_space = free > 0
             take, acc = [], 0
             for e in pending:
                 size = int(e.get("size") or 0)
-                if size and acc + size + reserve > free:
+                if check_space and size and acc + size + reserve > free:
                     break
                 take.append(e)
                 acc += size
-            if not take:
+            if not take and check_space:
                 # Even the next file alone does not fit: pause rather than
                 # start and fail. The job keeps its place in the queue.
                 need = int(pending[0].get("size") or 0)
                 with self.lock:
                     job.status = "paused"
                     job.pause_reason = "space"
+                    job.live = {}
+                    job.speed = 0.0
                     job.message = (f"Paused — needs {human_size(need)} "
                                    f"but only {human_size(free)} free")
                     job.updated = time.time()

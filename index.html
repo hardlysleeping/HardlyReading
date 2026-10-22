@@ -177,6 +177,7 @@
   .pill.planned{background:rgba(240,180,41,.14);color:var(--warn)}
   .pill.done{background:rgba(62,207,142,.14);color:var(--ok)}
   .pill.failed{background:rgba(239,91,91,.14);color:var(--err)}
+  .pill.paused{background:rgba(240,180,41,.18);color:var(--warn)}
 
   .bar{height:5px;background:#0b0d11;border-radius:3px;overflow:hidden;margin-top:11px}
   .bar > i{display:block;height:100%;background:var(--accent);
@@ -1066,10 +1067,10 @@ function renderJobs(st){
       if(ready <= 0){
         acts = `<span class="hint" style="margin:0">Nothing to download</span>`;
       } else {
-        // Refuse to start a grab that cannot fit, rather than filling the disk
-        // halfway through and leaving a broken library behind.
-        acts = `<button class="btn sm" data-confirm="${esc(j.id)}"
-                  ${j.fits === false ? "disabled" : ""}>Download</button>`
+        // Starting is allowed even when the whole job will not fit: the
+        // download now stops before the first file that does not fit and
+        // resumes later, which is friendlier than a dead button.
+        acts = `<button class="btn sm" data-confirm="${esc(j.id)}">Download</button>`
              + `<button class="btn ghost sm" data-cancel="${esc(j.id)}">Cancel</button>`;
       }
     } else if(j.status === "queued" || j.status === "resolving"){
@@ -1492,9 +1493,14 @@ async function loadPage(){
     lastResult = r;
     const filterNote = r.filtered && r.filtered !== "all"
       ? ` · showing ${r.visible} of this page matching “${r.filtered}”` : "";
+    // archive.org refuses deep pages rather than returning an empty one; the
+    // server falls back to page 1, so say that instead of showing page 1 as if
+    // it were page 900.
+    const deepNote = r.deep_paging
+      ? ` · <b>archive.org stops paging that deep — showing page 1</b>` : "";
     $("searchMeta").innerHTML =
       `${r.numFound.toLocaleString()} result${r.numFound===1?"":"s"} · ` +
-      `query: <code>${esc(r.scoped_query)}</code>${esc(filterNote)}`;
+      `query: <code>${esc(r.scoped_query)}</code>${esc(filterNote)}${deepNote}`;
     const host = $("results");
     if(!r.docs.length){
       host.innerHTML = r.filtered && r.filtered !== "all"

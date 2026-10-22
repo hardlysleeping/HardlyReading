@@ -3,7 +3,25 @@
 Notable changes to HardlyReading. Versions are tagged on GitHub with matching
 release notes.
 
-## [2.5.1] — 2026-10-21
+## [2.5.2] — 2026-10-21
+
+### Fixed
+
+- **The Download button was disabled when the whole job would not fit**, even
+  though the line beside it promised the job would pause instead. Starting is
+  allowed now; the pause is the safety net.
+- **A failed free-space check looked like a full disk.** `free_bytes` returns 0
+  on error (permissions, an unusual filesystem) and the download refused to
+  start for every file. 0 now means "unknown" and the check is skipped.
+- The **Paused** pill had no colour of its own and rendered as plain grey
+  beside the amber `Ready` pill.
+- A paused job kept the previous per-file progress rows and speed in its card.
+- Deep-paging fallback was invisible: the search said page 1 while the pager
+  claimed the page you asked for. It now says archive.org stopped that deep.
+- `space_reserve_mb` existed in code but not in the settings, so it could not be
+  changed through the API at all.
+
+
 
 ### Changed
 
