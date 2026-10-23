@@ -7,11 +7,18 @@ release notes.
 
 ### Fixed
 
-- The description backfill thread is only started when there is a job that
-  actually lacks a description. Started unconditionally, every short-lived engine
-  left a daemon thread alive that did nothing but sleep; a test run creates dozens
-  of them, and on CPython 3.10 the suite passed all 71 tests and then segfaulted
-  during interpreter shutdown.
+- Job workers now stop when the process does. They are daemon threads, so the
+  interpreter used to abandon them mid-subprocess or mid-socket, which segfaulted
+  the test run on CPython 3.10 **after all tests had passed** (exit 139, core
+  dumped). A shutdown event lets them return first; `shutdown_workers()` waits for
+  them and is registered with `atexit`.
+- The description backfill thread only starts when there is a job that actually
+  lacks a description, and it watches the same shutdown event.
+- The test suite no longer starts real workers: nothing in it asserts that a
+  download completes, and a started worker really does try to resolve and download
+  — live network calls and subprocesses in a suite that claims to be offline, with
+  daemon threads still running at exit. Queue tests still assert the state
+  transitions they always did.
 
 ## [2.10.1] — 2026-10-22
 

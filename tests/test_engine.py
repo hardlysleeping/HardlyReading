@@ -635,6 +635,45 @@ class HiddenCssTest(unittest.TestCase):
         self.assertEqual(offenders, [], "classes needing a [hidden] rule")
 
 
+_real_kick = None
+
+
+def setUpModule():
+    """Never start real job workers.
+
+    Nothing here asserts that a download completes — the queue tests assert state
+    transitions — but a started worker really does try to resolve and download,
+    which means live network calls and subprocesses, and daemon threads still
+    doing that when the interpreter exits. That is what segfaulted the run on
+    CPython 3.10 after all 71 tests had passed.
+    """
+    global _real_kick
+    _real_kick = engine.Engine.kick
+    engine.Engine.kick = lambda self: None
+
+
+def tearDownModule():
+    """Leave no background threads behind."""
+    if _real_kick is not None:
+        engine.Engine.kick = _real_kick
+    engine.shutdown_workers()
+    for t in threading.enumerate():
+        if t is not threading.current_thread():
+            t.join(3)
+
+
+class WorkerShutdownTest(unittest.TestCase):
+    def test_a_worker_returns_when_shutdown_is_set(self):
+        e = fresh_engine()
+        t = threading.Thread(target=e._run, daemon=True, name="job-worker")
+        t.start()
+        try:
+            engine.shutdown_workers(timeout=5)
+            self.assertFalse(t.is_alive(), "worker kept running through shutdown")
+        finally:
+            engine._SHUTDOWN.clear()    # leave the rest of the suite unaffected
+
+
 class BackfillThreadTest(unittest.TestCase):
     """A background thread that only sleeps is a thread that is still running
     when the interpreter shuts down. On 3.10 that segfaulted the suite."""

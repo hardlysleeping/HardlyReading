@@ -17,6 +17,7 @@
 
 Stdlib only. Runs on Windows / Linux / macOS.
 """
+import atexit
 import json
 import hashlib
 import html
@@ -1092,8 +1093,11 @@ WantedBy=default.target
         still gets the text, so its library row can show it.
         """
         try:
-            time.sleep(2)          # let the server come up first
+            if _SHUTDOWN.wait(2):  # let the server come up first
+                return
             for job in list(self.jobs):
+                if _SHUTDOWN.is_set():
+                    return
                 if job.desc:
                     continue
                 ident = next((i.get("identifier") for i in job.items
@@ -1685,7 +1689,8 @@ WantedBy=default.target
             self._workers = [t for t in getattr(self, "_workers", []) if t.is_alive()]
             want = self.target_workers()
             for _ in range(max(0, want - len(self._workers))):
-                t = threading.Thread(target=self._run, daemon=True)
+                t = threading.Thread(target=self._run, daemon=True,
+                                     name="job-worker")
                 t.start()
                 self._workers.append(t)
 
@@ -1753,18 +1758,18 @@ WantedBy=default.target
         there is nothing left that could run — claimed jobs belong to other
         workers, and a retry due in an hour is not a reason to idle forever.
         """
-        while True:
+        while not _SHUTDOWN.is_set():
             if self.paused:
-                time.sleep(0.5)
+                _SHUTDOWN.wait(0.5)
                 continue
             job = self._next_queued(claim=True)
             if not job:
                 with self.lock:
                     busy_elsewhere = bool(self._claimed)
                 if busy_elsewhere:
-                    time.sleep(1)
+                    _SHUTDOWN.wait(1)
                     continue
-                time.sleep(2)   # nothing runnable now; a retry may become due
+                _SHUTDOWN.wait(2)   # nothing runnable now; a retry may become due
                 if not self._has_pending():
                     with self.lock:
                         self._workers = [t for t in self._workers
@@ -3000,6 +3005,28 @@ def free_bytes(path: str) -> int:
 # Free space kept back so a download cannot fill the disk completely. A paused
 # job needs room to resume plus whatever the OS wants; 256 MB is the floor.
 SPACE_RESERVE_MB = 256
+
+# Set once, at exit: worker and backfill threads check it and return instead of
+# being killed mid-call when the interpreter finalises, which segfaults (seen on
+# CPython 3.10 under CI, after the suite had already reported OK).
+_SHUTDOWN = threading.Event()
+
+
+def shutdown_workers(timeout: float = 3.0) -> None:
+    """Ask background threads to stop, then wait briefly for them.
+
+    Daemon threads are not stopped by the interpreter, they are abandoned while
+    possibly inside subprocess or sqlite; that is the crash this prevents.
+    """
+    _SHUTDOWN.set()
+    deadline = time.monotonic() + timeout
+    for t in list(threading.enumerate()):
+        if t is threading.current_thread() or t.name not in ("job-worker", "desc-backfill"):
+            continue
+        t.join(max(0.0, deadline - time.monotonic()))
+
+
+atexit.register(shutdown_workers)
 
 ARIA_FLAGS = ["-x", "1", "-s", "1", "-c",
               "--file-allocation=none",
