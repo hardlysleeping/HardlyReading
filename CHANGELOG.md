@@ -3,6 +3,15 @@
 Notable changes to HardlyReading. Versions are tagged on GitHub with matching
 release notes.
 
+## [2.10.1] — 2026-10-22
+
+### Fixed
+
+- A multi-issue item (one item holding many scans) showed **Browse issues**, but
+  the collection endpoint has no members for an item, so it answered "nothing
+  listed". Bundles now offer Read and Download like any readable item; only a
+  collection opens as a list of issues.
+
 ## [2.10.0] — 2026-10-22
 
 ### Added
@@ -833,6 +842,7 @@ First release.
 - Built-in CBZ / CBR / PDF reader; CBR needs `unrar`, `bsdtar` or `7z`
 - Cross-platform launcher that finds `aria2c` and opens the browser
 
+[2.10.1]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.10.1
 [2.10.0]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.10.0
 [2.9.2]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.9.2
 [2.9.1]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.9.1

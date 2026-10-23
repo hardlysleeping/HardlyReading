@@ -2451,9 +2451,10 @@ function actionsFor(d){
   const isColl = kind === "collection", isBundle = kind === "bundle";
   const c = covered[d.identifier];
   const b = [];
-  // A collection or a bundle has no pages of its own, so it opens instead of
-  // pretending its single "page" is readable.
-  if(isColl || isBundle){
+  // Only a collection is a list of other items. A bundle IS one item holding
+  // many scans, so it reads like any other item — asking the collection endpoint
+  // about it returns "nothing listed", which is a dead button.
+  if(isColl){
     b.push(`<button data-open="${esc(d.identifier)}" data-name="${esc(d.title)}">Browse issues</button>`);
   }
   if(!isColl && d.identifier){
