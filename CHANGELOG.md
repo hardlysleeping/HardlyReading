@@ -3,6 +3,30 @@
 Notable changes to HardlyReading. Versions are tagged on GitHub with matching
 release notes.
 
+## [2.9.0] — 2026-10-22
+
+### Added
+
+- **Browse a collection before pulling it.** Collection results in Search carry a
+  `Browse issues` button that opens the collection and lists what archive.org
+  says is inside it: title, date, size, and whether the queue or library already
+  has it. Oldest/newest ordering, a filter box, and paging past the first 100.
+- Pick single issues with **Add**, or tick several and add them together. Each
+  pick becomes its own `item` job, so ten ticked issues download ten files rather
+  than resolving the whole run.
+- `GET /api/collection` lists a window of a collection's members;
+  `POST /api/add-many` queues a list of identifiers in one save, reporting what
+  was skipped as already queued and what was not a valid identifier.
+- **Read or keep a single result without queueing it.** Search cards carry
+  **Read**, which streams the pages through the normal reader and saves the same
+  position a downloaded copy would, and **Add to library**, which keeps the title
+  in the library with no file on disk. `POST /api/shelf` and `POST /api/unshelf`
+  back it; a shelf row reads "in library / not downloaded" and can be removed
+  without touching anything on disk.
+- A streamed read asked for by identifier returns the progress key with its page
+  count, so reading from Search and later opening the library row resumes rather
+  than starting again.
+
 ## [2.8.0] — 2026-10-22
 
 ### Changed
@@ -748,6 +772,7 @@ First release.
 - Built-in CBZ / CBR / PDF reader; CBR needs `unrar`, `bsdtar` or `7z`
 - Cross-platform launcher that finds `aria2c` and opens the browser
 
+[2.9.0]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.9.0
 [2.8.0]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.8.0
 [2.7.4]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.7.4
 [2.7.3]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.7.3

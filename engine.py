@@ -146,7 +146,7 @@ def http_json(url: str, timeout: int = 60):
     """GET a URL and return parsed JSON. No retry here — callers that can
     recover (the resolver, the per-item probe) do their own attempts."""
 
-    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/2.8.0"})
+    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/2.9.0"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.load(r)
 
@@ -394,7 +394,8 @@ def useful_desc(desc: str, title: str) -> str:
 
 def search_page(query: str, rows: int = 24, page: int = 1,
                 mediatype: str = "texts", sort: str = "downloads desc",
-                title_only: bool = True, collections_only: bool = False):
+                title_only: bool = True, collections_only: bool = False,
+                extra_fields=None):
     """Search archive.org for browsing.
 
     Scoping is shared with the queue path via scope_query() so browsing and
@@ -411,11 +412,15 @@ def search_page(query: str, rows: int = 24, page: int = 1,
     else:
         q = scope_query(query, mediatype) if title_only else query
 
+    fields = ["identifier", "title", "year", "mediatype", "downloads",
+              "creator", "description"]
+    # Callers that list a collection's members also want the issue date and the
+    # item size; asking for them only there keeps ordinary search payloads lean.
+    for f in (extra_fields or []):
+        if f not in fields:
+            fields.append(f)
     params = [("q", q), ("rows", str(rows)), ("page", str(page)),
-              ("output", "json"),
-              ("fl[]", "identifier"), ("fl[]", "title"), ("fl[]", "year"),
-              ("fl[]", "mediatype"), ("fl[]", "downloads"),
-              ("fl[]", "creator"), ("fl[]", "description")]
+              ("output", "json")] + [("fl[]", f) for f in fields]
     if sort:
         params.append(("sort[]", sort))
     url = SEARCH_API + "?" + urllib.parse.urlencode(params)
@@ -793,6 +798,10 @@ class Engine:
         # order, with pinned ones kept at the front. Empty by default — every
         # job is uncategorised until someone says otherwise.
         self.categories: list = []
+        # Titles kept for later with no file on disk. The library used to be
+        # "what the queue finished"; this is the other half — something you
+        # found, want to keep, and read straight from archive.org.
+        self.shelf: list = []
         self._lock_db = threading.Lock()
         self._load_state()
         # Jobs queued before descriptions were stored have none. Fill them in
@@ -1034,6 +1043,12 @@ WantedBy=default.target
             if isinstance(c, dict) and c.get("id") and c.get("name"):
                 self.categories.append({"id": str(c["id"]), "name": str(c["name"]),
                                         "pinned": bool(c.get("pinned"))})
+        for sh in (d.get("shelf") or []):
+            if isinstance(sh, dict) and sh.get("ident"):
+                self.shelf.append({"ident": str(sh["ident"]),
+                                   "name": str(sh.get("name") or sh["ident"]),
+                                   "desc": str(sh.get("desc") or ""),
+                                   "added": float(sh.get("added") or 0)})
         for jd in d.get("jobs", []):
             try:
                 j = Job(**{k: v for k, v in jd.items()
@@ -1155,6 +1170,7 @@ WantedBy=default.target
                  "order": [jid for jid in self.order
                            if any(j.id == jid for j in self.jobs)],
                  "categories": self.categories,
+                 "shelf": self.shelf,
                  "jobs": [asdict(j) for j in self.jobs]}
             tmp = STATE_FILE + ".tmp"
             try:
@@ -1166,6 +1182,45 @@ WantedBy=default.target
                 # A state write must never take the app down; the queue is still
                 # in memory and the next save will retry.
                 pass
+
+    # ---- shelf: kept titles with nothing downloaded
+
+    def shelf_ids(self) -> list:
+        return [s["ident"] for s in self.shelf if s.get("ident")]
+
+    def shelf_add(self, ident: str, name: str = "", desc: str = "") -> bool:
+        """Keep an archive.org item in the library without queueing a download.
+
+        Stored by identifier, so re-adding is idempotent and the entry survives
+        a restart. Reading streams from archive.org; nothing touches the disk.
+        """
+        ident = (ident or "").strip()
+        if not ident:
+            return False
+        with self.lock:
+            for s in self.shelf:
+                if s.get("ident") == ident:
+                    s["name"] = name or s.get("name") or ident
+                    if desc:
+                        s["desc"] = desc
+                    break
+            else:
+                self.shelf.append({"ident": ident, "name": name or ident,
+                                   "desc": desc or "", "added": time.time()})
+        self.save_state()
+        return True
+
+    def shelf_remove(self, ident: str) -> bool:
+        ident = (ident or "").strip()
+        if not ident:
+            return False
+        with self.lock:
+            before = len(self.shelf)
+            self.shelf = [s for s in self.shelf if s.get("ident") != ident]
+            gone = len(self.shelf) != before
+        if gone:
+            self.save_state()
+        return gone
 
     # ---- categories
 
@@ -1294,6 +1349,79 @@ WantedBy=default.target
         self.kick()
         return job.summary()
 
+    def collection_items(self, ident: str, offset: int = 0, rows: int = 100,
+                         order: str = "oldest") -> dict:
+        """One window of a collection's members, for the search drill-down.
+
+        Same `collection:<id>` scoping the queue uses, so what you see here is
+        what a queued collection would have resolved to.
+        """
+        ident = (ident or "").strip()
+        if not IDENT_RE.match(ident):
+            raise ValueError("invalid collection id")
+        rows = max(1, min(200, int(rows or 100)))
+        # archive.org pages in whole pages: land the request on a page boundary
+        # so `offset` and what comes back always agree.
+        offset = max(0, int(offset or 0))
+        offset -= offset % rows
+        want = "newest" if str(order).lower().startswith("new") else "oldest"
+        sort = "date desc" if want == "newest" else "date asc"
+        res = search_page(f"collection:{ident}", rows=rows,
+                          page=offset // rows + 1, sort=sort, title_only=False,
+                          extra_fields=["date", "item_size"])
+        have = self.covered()
+        items = []
+        for d in res.get("docs") or []:
+            iid = d.get("identifier") or ""
+            if not iid:
+                continue
+            c = have.get(iid) or {}
+            items.append({
+                "id": iid,
+                "title": d.get("title") or iid,
+                "date": d.get("date") or "",
+                "year": d.get("year") or "",
+                "size": int(d.get("item_size") or 0),
+                "have": c.get("status") or "",
+                "job": c.get("job") or "",
+            })
+        return {"identifier": ident, "total": int(res.get("numFound") or 0),
+                "offset": offset, "rows": rows, "order": want, "items": items}
+
+    def add_many(self, idents, category: str = ""):
+        """Queue individual items by identifier, in one save.
+
+        The collection browser adds exactly the issues picked, not the whole
+        collection, so each identifier becomes its own `item` job. Anything
+        already queued is reported rather than raised: picking one issue you
+        already have should not fail the other nineteen.
+        """
+        category = category if any(c["id"] == category for c in self.categories) else ""
+        added, skipped, invalid = [], [], []
+        with self.lock:
+            present = {j.query for j in self.jobs
+                       if j.kind == "item" and j.status != "cancelled"}
+            for raw in idents:
+                ident = str(raw or "").strip()
+                if not IDENT_RE.match(ident):
+                    invalid.append(str(raw or ""))
+                    continue
+                if ident in present:
+                    skipped.append(ident)
+                    continue
+                job = Job(id=uuid.uuid4().hex[:12], kind="item",
+                          source=f"https://archive.org/details/{ident}",
+                          label=ident, query=ident, category=category)
+                self.jobs.append(job)
+                self.order.append(job.id)
+                present.add(ident)
+                added.append(job.summary())
+            if added:
+                self.save_state()
+        if added:
+            self.kick()
+        return {"added": added, "skipped": skipped, "invalid": invalid}
+
     def download_root(self) -> str:
         """The folder downloads land in, with the setting's empty value resolved.
 
@@ -1353,6 +1481,9 @@ WantedBy=default.target
                 # first because pinning re-sorts the list.
                 "categories": [dict(c) for c in self.categories],
                 "max_pinned": self.MAX_PINNED,
+                # Identifiers kept in the library without a file, so a search
+                # card can say "in library" instead of offering to add again.
+                "shelf": [s["ident"] for s in self.shelf if s.get("ident")],
                 # The UI shows this when the folder field is left empty, so an
                 # empty box is explained instead of looking like "no folder".
                 "download_default": default_download_dir(),
@@ -1367,6 +1498,8 @@ WantedBy=default.target
 
     # ---- worker
     FOLDER_PREFIX = "folder:"
+    # Library rows that exist only on the shelf, not on disk.
+    SHELF_PREFIX = "shelf:"
 
     def folder_path(self, series):
         """Resolve a `folder:<series>` pseudo-id to a directory under the
@@ -2397,6 +2530,11 @@ def listing_series(job_label: str, query: str, items) -> str:
 
 
 _COLLECTION_TITLE_CACHE = {}
+
+
+# What counts as an archive.org identifier, for the paths that accept one from
+# the browser instead of from a pasted URL.
+IDENT_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,119}$")
 
 
 def collection_title(ident: str) -> str:

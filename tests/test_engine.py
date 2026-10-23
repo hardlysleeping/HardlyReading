@@ -16,6 +16,7 @@ import sys
 import tempfile
 import threading
 import unittest
+from unittest import mock
 from http.server import ThreadingHTTPServer
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -530,6 +531,86 @@ class ListenTest(unittest.TestCase):
         self.assertFalse(h._is_local())
 
 
+class CollectionBrowseTest(unittest.TestCase):
+    """Opening a collection must list what the queue would resolve, and adding
+    from it must queue only the picked issues."""
+
+    def test_lists_members_with_paging_and_order(self):
+        e = fresh_engine()
+        docs = [{"identifier": f"item{i}", "title": f"Issue {i}",
+                 "date": "1963-01-01", "year": "1963", "item_size": 1000 * i}
+                for i in range(1, 4)]
+        seen = {}
+
+        def fake(query, rows=24, page=1, sort="", title_only=True,
+                 extra_fields=None, **kw):
+            seen.update(query=query, rows=rows, page=page, sort=sort,
+                        title_only=title_only, extra=extra_fields)
+            return {"numFound": 4242, "docs": docs}
+
+        with mock.patch.object(engine, "search_page", fake):
+            res = e.collection_items("madmagazine", offset=100, rows=50,
+                                     order="newest")
+
+        # Same scoping the queue's collection jobs use.
+        self.assertEqual(seen["query"], "collection:madmagazine")
+        self.assertFalse(seen["title_only"])
+        self.assertEqual(seen["sort"], "date desc")
+        self.assertIn("item_size", seen["extra"])
+        # offset 100 with 50-row pages is page 3, on a page boundary.
+        self.assertEqual(seen["page"], 3)
+        self.assertEqual(res["total"], 4242)
+        self.assertEqual(res["offset"], 100)
+        self.assertEqual([i["id"] for i in res["items"]], ["item1", "item2", "item3"])
+        self.assertEqual(res["items"][2]["size"], 3000)
+
+    def test_marks_issues_already_in_the_library(self):
+        e = fresh_engine()
+        job = engine.Job(id="j1", kind="collection", source="x", label="x",
+                         query="collection:madmagazine", status="done")
+        job.items = [{"identifier": "item2", "outname": "Issue 2.pdf"}]
+        with e.lock:
+            e.jobs.append(job)
+            e.order.append(job.id)
+
+        def fake(query, rows=24, page=1, sort="", title_only=True,
+                 extra_fields=None, **kw):
+            return {"numFound": 2, "docs": [
+                {"identifier": "item1", "title": "One"},
+                {"identifier": "item2", "title": "Two"}]}
+
+        with mock.patch.object(engine, "search_page", fake):
+            res = e.collection_items("madmagazine")
+        self.assertEqual(res["items"][1]["have"], "done")
+        self.assertEqual(res["items"][0]["have"], "")
+
+    def test_rejects_identifiers_that_are_not_identifiers(self):
+        e = fresh_engine()
+        for bad in ("", "../etc/passwd", "has space", "a" * 200):
+            with self.assertRaises(ValueError):
+                e.collection_items(bad)
+
+    def test_add_many_queues_picks_and_reports_the_rest(self):
+        e = fresh_engine()
+        with mock.patch.object(e, "kick", lambda: None):
+            first = e.add_many(["issue-a", "issue-b", "issue-a", "bad id!"])
+            second = e.add_many(["issue-b", "issue-c"])
+        self.assertEqual([j["label"] for j in first["added"]], ["issue-a", "issue-b"])
+        self.assertEqual(first["skipped"], ["issue-a"])
+        self.assertEqual(first["invalid"], ["bad id!"])
+        self.assertEqual([j["label"] for j in second["added"]], ["issue-c"])
+        self.assertEqual(second["skipped"], ["issue-b"])
+        kinds = {j.query: j.kind for j in e.jobs}
+        self.assertEqual(kinds["issue-c"], "item")
+        self.assertEqual(len(e.jobs), 3)
+
+    def test_add_many_refuses_an_unknown_category(self):
+        e = fresh_engine()
+        with mock.patch.object(e, "kick", lambda: None):
+            e.add_many(["issue-a"], category="nope")
+        self.assertEqual(e.jobs[0].category, "")
+
+
 class HiddenCssTest(unittest.TestCase):
     """A class that sets `display` beats the `hidden` attribute, which is how the
     unlock overlay ended up covering an app that had no password."""
@@ -552,6 +633,46 @@ class HiddenCssTest(unittest.TestCase):
             if sets_display and f".{cls}[hidden]" not in css:
                 offenders.append(cls)
         self.assertEqual(offenders, [], "classes needing a [hidden] rule")
+
+
+class ShelfTest(unittest.TestCase):
+    """Titles kept in the library with no file on disk."""
+
+    def setUp(self):
+        self.e = fresh_engine()
+        with self.e.lock:
+            self.e.shelf = []
+            self.e.save_state()
+
+    def tearDown(self):
+        with self.e.lock:
+            self.e.shelf = []
+            self.e.save_state()
+
+    def test_add_is_idempotent_and_updates_the_name(self):
+        self.e.shelf_add("mad_1", "Mad 1")
+        self.e.shelf_add("mad_1", "Mad Magazine 1")
+        self.assertEqual(self.e.shelf_ids(), ["mad_1"])
+        self.assertEqual(self.e.shelf[0]["name"], "Mad Magazine 1")
+
+    def test_a_blank_identifier_is_refused(self):
+        self.assertFalse(self.e.shelf_add("   "))
+        self.assertEqual(self.e.shelf_ids(), [])
+
+    def test_remove_takes_it_off_the_shelf(self):
+        self.e.shelf_add("mad_2", "Mad 2")
+        self.assertTrue(self.e.shelf_remove("mad_2"))
+        self.assertEqual(self.e.shelf_ids(), [])
+
+    def test_shelf_survives_a_restart(self):
+        self.e.shelf_add("mad_3", "Mad 3")
+        self.assertIn("mad_3", engine.Engine().shelf_ids())
+
+    def test_stream_and_library_agree_on_the_progress_key(self):
+        # A read from a search card and the shelf row in the library have to
+        # name the same book, or reading it twice starts from page one again.
+        self.assertEqual(engine.book_key({"identifier": "mad_4"}),
+                         engine.book_key({"identifier": "mad_4", "desc": "blurb"}))
 
 
 if __name__ == "__main__":

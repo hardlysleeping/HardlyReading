@@ -84,6 +84,9 @@ UI never drives a download directly — it only posts intent and reads back stat
   between devices.
 - **Read without downloading** — stream a book's pages straight from
   archive.org, with the same reader and the same saved position.
+- **Read or keep a result without queueing it** — a single result in Search has
+  **Read** (streams the pages now) and **Add to library** (keeps the title in the
+  library with no file on disk). Neither one adds anything to the queue.
 - **A queue that shows its work** — grouped into Downloading now / Paused /
   Needs attention / Waiting / Finished, with per-file progress for concurrent
   transfers.
@@ -91,6 +94,8 @@ UI never drives a download directly — it only posts intent and reads back stat
   or down; the numbers are the run order, so `#1` really does download next.
 - **Take as many issues as you want** — pick a count (or type one) and whether
   to start from the first issue or the newest, and only those are queued.
+- **Or pick them by hand** — open a collection from Search, tick the issues you
+  actually want, and queue exactly those.
 - **Stops before it fills the disk** — if the next file will not fit, the job
   pauses and says so instead of leaving a truncated file behind.
 - **Several jobs at once** — 1 to 4, with the file budget shared between them so
@@ -131,6 +136,27 @@ collection costs nothing.
 
 The card then reads `the newest 25 of 312`, and everything outside that count is
 reported as over the limit, not as a duplicate you already had.
+
+### Picking individual issues
+
+A count is still a blunt instrument when you want issue 1, 4 and the swimsuit
+special. Collection results in Search carry a **Browse issues** button: it opens
+the collection and lists what archive.org says is inside it — title, date, size,
+and whether the queue or the library already has it.
+
+From there:
+
+- **Add** on a row grabs that one issue.
+- Tick any number of rows and **Add N to queue** grabs exactly those.
+- **Filter issues…** narrows the list while you pick; **oldest first / newest
+  first** re-sorts it, and **Load more** pages through collections longer than
+  100 issues.
+- **Select all** ticks everything loaded — the label says *Select loaded* when
+  there is more to fetch, so a 900-issue collection cannot be queued by accident.
+
+Each pick becomes its own queue item, which is what makes this different from
+adding the collection: ten ticked issues are ten jobs that download ten files,
+not a job that resolves and pulls the whole run.
 
 ### Watching the disk
 

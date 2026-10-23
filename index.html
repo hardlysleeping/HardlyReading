@@ -715,6 +715,39 @@
     padding:2px 8px;border-radius:999px;white-space:nowrap;
     min-width:86px;text-align:center;font-variant-numeric:tabular-nums}
 
+  /* ---------- collection browser ---------- */
+  .collbox{max-width:760px}
+  .mhead .collcount{font-size:11.5px;color:var(--dim);margin-right:10px;
+    font-variant-numeric:tabular-nums;white-space:nowrap}
+  .collbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;
+    padding:12px 20px;border-bottom:1px solid var(--line);
+    background:rgba(255,255,255,.015)}
+  .collbar input{flex:1 1 180px;height:34px;font-size:13px}
+  .collbar select{height:34px}
+  .collbody{padding:10px 14px 16px;min-height:120px}
+  .collrow{display:flex;align-items:center;gap:12px;padding:9px 10px;
+    border:1px solid transparent;border-radius:10px;cursor:pointer;
+    transition:background var(--t),border-color var(--t)}
+  .collrow:hover{background:rgba(255,255,255,.04);border-color:var(--line)}
+  .collrow.on{background:rgba(91,141,255,.1);border-color:rgba(91,141,255,.4)}
+  .collrow input[type=checkbox]{-webkit-appearance:none;appearance:none;flex:none;
+    width:17px;height:17px;border-radius:5px;border:1px solid var(--line2);
+    background:var(--bg2);cursor:pointer;position:relative;
+    transition:background var(--t),border-color var(--t)}
+  .collrow input[type=checkbox]:checked{background:var(--accent);border-color:var(--accent)}
+  .collrow input[type=checkbox]:checked::after{content:"✓";position:absolute;
+    inset:0;display:grid;place-items:center;font-size:11px;color:#fff}
+  .collmain{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+  .collmain b{font-size:13px;font-weight:600;letter-spacing:-.005em;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .collmain em{font-style:normal;font-size:11.5px;color:var(--dim);
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+    font-variant-numeric:tabular-nums}
+  .collrow .collone{flex:none;min-width:56px}
+  .collrow .collone[disabled]{opacity:.6}
+  .collmore{display:flex;margin:12px auto 2px}
+  .collstate{font-size:11px;color:var(--ok);white-space:nowrap}
+
   /* ---------- shared control polish ---------- */
   select{background:var(--bg2);border:1px solid var(--line);color:var(--text);
     border-radius:9px;padding:6px 9px;font:inherit;font-size:12.5px;cursor:pointer;
@@ -941,6 +974,32 @@
     </div>
   </div>
 
+  <!-- COLLECTION BROWSER: pick individual issues out of a collection -->
+  <div class="modal" id="collModal" hidden>
+    <div class="modalbox collbox" role="dialog" aria-modal="true"
+         aria-labelledby="collTitle">
+      <div class="mhead">
+        <span class="mtitle" id="collTitle">Collection</span>
+        <span class="collcount" id="collCount"></span>
+        <button id="collClose" aria-label="Close">✕</button>
+      </div>
+      <div class="collbar">
+        <input type="search" id="collFilter" placeholder="Filter issues…">
+        <select id="collOrder" title="Issue order">
+          <option value="oldest">oldest first</option>
+          <option value="newest">newest first</option>
+        </select>
+        <button class="btn ghost sm" id="collSelAll">Select all</button>
+        <button class="btn ghost sm" id="collSelNone">Clear</button>
+      </div>
+      <div class="mbody collbody" id="collList"></div>
+      <div class="mfoot">
+        <span class="msaved" id="collNote"></span>
+        <button class="btn sm" id="collAdd" disabled>Add 0 to queue</button>
+      </div>
+    </div>
+  </div>
+
   <div class="tabbar">
     <button class="tab on" data-tab="queue">Downloads</button>
     <button class="tab" data-tab="search">Search archive.org</button>
@@ -1100,6 +1159,8 @@ Support the Archive</a>
 "use strict";
 const $ = id => document.getElementById(id);
 let lastState = null;
+let lastDocs = [];          // last search page, so a card can repaint in place
+let shelfIds = new Set();   // identifiers kept in the library with no file
 let tickTimer = null;
 
 /* ---------- helpers ---------- */
@@ -1818,6 +1879,55 @@ document.addEventListener("click", async (e)=>{
     return;
   }
 
+  // Read from a search card: stream the pages, put nothing in the queue.
+  const sread = e.target.closest("[data-sread]");
+  if(sread){
+    sread.disabled = true;
+    try{
+      await openStream({job: "", name: sread.dataset.name,
+                        ident: sread.dataset.sread, key: ""});
+    }catch(err){ toast(err.message); }
+    sread.disabled = false;
+    return;
+  }
+
+  const addShelf = e.target.closest("[data-shelf]");
+  if(addShelf){
+    addShelf.disabled = true;
+    try{
+      const r = await api("/api/shelf", {method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ident: addShelf.dataset.shelf,
+                              name: addShelf.dataset.name || ""})});
+      shelfIds = new Set(r.shelf || []);
+      addShelf.textContent = "In library ✓";
+      addShelf.title = "Remove this title from your library";
+      addShelf.dataset.unshelf = addShelf.dataset.shelf;
+      delete addShelf.dataset.shelf;
+      delete addShelf.dataset.name;
+      addShelf.disabled = false;
+      toast("Added to your library");
+    }catch(err){ toast(err.message); addShelf.disabled = false; }
+    return;
+  }
+
+  const unShelf = e.target.closest("[data-unshelf]");
+  if(unShelf){
+    unShelf.disabled = true;
+    try{
+      const r = await api("/api/unshelf", {method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ident: unShelf.dataset.unshelf})});
+      shelfIds = new Set(r.shelf || []);
+      if($("view-search").style.display !== "none" && lastDocs.length){
+        renderCards(lastDocs);
+      }
+      if($("view-library").style.display !== "none") await loadLibrary();
+      toast("Removed from your library");
+    }catch(err){ toast(err.message); unShelf.disabled = false; }
+    return;
+  }
+
   const st = e.target.closest("[data-stream]");
   if(st){
     st.disabled = true;
@@ -1985,6 +2095,7 @@ async function tick(){
       st.jobs = lastState.jobs;
     }
     lastState = st;
+    shelfIds = new Set(st.shelf || []);
     renderStatus(st);
     renderStrips();
     renderJobs(st);
@@ -2204,6 +2315,7 @@ function coverFor(id){
 
 function renderCards(docs){
   const host = $("results");
+  lastDocs = docs;
   host.innerHTML = docs.map(d=>{
     const kind = d.hold_kind || "";
     const isColl = kind === "collection";
@@ -2220,12 +2332,32 @@ function renderCards(docs){
 
     // Queued work can be pulled out of the queue; finished work can jump to its
     // library entry. Deleting a downloaded file lives in the Library, not here.
-    let acts = "";
-    if(cv && c){
-      acts = c.status === "done"
-        ? `<div class="acts"><button data-lib="${esc(c.job)}" data-file="${esc(c.file)}">Open in library</button></div>`
-        : `<div class="acts"><button class="danger" data-rm="${esc(c.job)}">Remove from queue</button></div>`;
+    // A collection also opens: pick issues out of it rather than taking the run.
+    const actBtns = [];
+    if(isColl){
+      actBtns.push(`<button data-open="${esc(d.identifier)}">Browse issues</button>`);
     }
+    // A single issue can be read now — streamed, nothing downloaded — and kept
+    // in the library without joining the queue. A collection or a bundle has no
+    // pages of its own, so it only gets Browse.
+    if(!isColl && !isBundle && d.identifier){
+      actBtns.push(`<button data-sread="${esc(d.identifier)}" data-name="${esc(d.title)}"
+        title="Read straight from archive.org — nothing is downloaded">Read</button>`);
+      const downloaded = cv && c && c.status === "done";
+      if(!downloaded){
+        actBtns.push(shelfIds.has(d.identifier)
+          ? `<button data-unshelf="${esc(d.identifier)}"
+               title="Remove this title from your library">In library ✓</button>`
+          : `<button data-shelf="${esc(d.identifier)}" data-name="${esc(d.title)}"
+               title="Keep it in your library without downloading">Add to library</button>`);
+      }
+    }
+    if(cv && c){
+      actBtns.push(c.status === "done"
+        ? `<button data-lib="${esc(c.job)}" data-file="${esc(c.file)}">Open in library</button>`
+        : `<button class="danger" data-rm="${esc(c.job)}">Remove from queue</button>`);
+    }
+    const acts = actBtns.length ? `<div class="acts">${actBtns.join("")}</div>` : "";
 
     const on = selected.has(d.identifier) ? " sel" : "";
     return `<div class="res${on}" data-id="${esc(d.identifier)}" data-kind="${esc(kind)}"
@@ -2279,6 +2411,14 @@ function renderCards(docs){
     b.onclick = (e)=>{
       e.stopPropagation();
       gotoLibrary(b.dataset.lib, b.dataset.file);
+    };
+  });
+  host.querySelectorAll("[data-open]").forEach(b=>{
+    b.onclick = (e)=>{
+      e.stopPropagation();
+      const card = b.closest(".res");
+      const title = card ? card.querySelector(".t").textContent : b.dataset.open;
+      collOpen(b.dataset.open, title);
     };
   });
   updateSelBar();
@@ -2354,6 +2494,174 @@ function gotoLibrary(job, file){
     if(++tries > 25) clearInterval(t);   // library may still be loading
   }, 200);
 }
+
+/* ---------- collection browser ---------- */
+const collState = {id:"", order:"oldest", offset:0, rows:100, total:0,
+                   items:[], sel:new Set(), loading:false, q:""};
+
+function collOpen(id, title){
+  collState.id = id;
+  collState.order = "oldest";
+  collState.offset = 0; collState.total = 0;
+  collState.items = []; collState.sel = new Set(); collState.q = "";
+  $("collTitle").textContent = title || id;
+  $("collCount").textContent = "";
+  $("collFilter").value = "";
+  $("collOrder").value = "oldest";
+  $("collList").innerHTML = '<div class="empty"><b>Loading issues…</b></div>';
+  $("collAdd").textContent = "Add 0 to queue";
+  $("collAdd").disabled = true;
+  $("collModal").hidden = false;
+  collLoad(true);
+}
+
+function collClose(){
+  $("collModal").hidden = true;
+  collState.id = "";
+}
+
+async function collLoad(reset){
+  if(!collState.id || collState.loading) return;
+  collState.loading = true;
+  if(reset){ collState.offset = 0; collState.items = []; collState.sel = new Set(); }
+  try{
+    const params = new URLSearchParams({id: collState.id,
+      offset: String(collState.offset), rows: String(collState.rows),
+      order: collState.order});
+    const r = await api("/api/collection?" + params.toString());
+    collState.total = r.total;
+    collState.items = collState.items.concat(r.items);
+    collState.offset += r.items.length;
+    $("collCount").textContent =
+      `${r.total.toLocaleString()} issue${r.total === 1 ? "" : "s"}`;
+    collRender();
+  }catch(e){
+    $("collList").innerHTML =
+      `<div class="empty"><b>Could not open that collection</b>
+        <span>${esc(e.message)}</span></div>`;
+    $("collAdd").disabled = true;
+  }finally{
+    collState.loading = false;
+  }
+}
+
+// What the queue or library already knows about an issue, if anything.
+function collStatus(it){
+  const c = covered[it.id];
+  return c ? c.status : (it.have || "");
+}
+
+function collRender(){
+  const needle = collState.q.trim().toLowerCase();
+  const rows = collState.items.filter(it =>
+    !needle || String(it.title || "").toLowerCase().includes(needle) ||
+    String(it.id).toLowerCase().includes(needle));
+  const list = $("collList");
+  if(!collState.items.length){
+    list.innerHTML = '<div class="empty"><b>Nothing listed</b>' +
+      '<span>archive.org returned no members for this collection.</span></div>';
+    collFoot();
+    return;
+  }
+  const left = collState.total - collState.items.length;
+  list.innerHTML = rows.map(it=>{
+    const st = collStatus(it);
+    const bits = [it.date || it.year,
+                  it.size ? fmtBytes(it.size) : "",
+                  st === "done" ? "in library" : (st ? "in queue" : "")].filter(Boolean);
+    const on = collState.sel.has(it.id);
+    return `<div class="collrow${on ? " on" : ""}" data-id="${esc(it.id)}">
+      <input type="checkbox" ${on ? "checked" : ""} aria-label="Select ${esc(it.title || it.id)}">
+      <span class="collmain"><b>${esc(it.title || it.id)}</b>
+        <em>${esc(bits.join(" · "))}</em></span>
+      <button class="btn ghost sm collone" data-add="${esc(it.id)}"
+              ${st ? "disabled" : ""}>${st ? "Added" : "Add"}</button>
+    </div>`;
+  }).join("") +
+  (rows.length ? "" : '<div class="empty"><span>Nothing matches that filter.</span></div>') +
+  (left > 0
+    ? `<button class="btn ghost sm collmore" id="collMore">Load ${Math.min(left, collState.rows)} more (${left.toLocaleString()} left)</button>`
+    : "");
+
+  list.querySelectorAll(".collrow").forEach(row=>{
+    row.onclick = (e)=>{
+      if(e.target.closest("button")) return;   // the per-row Add has its own handler
+      const id = row.dataset.id;
+      if(collState.sel.has(id)) collState.sel.delete(id);
+      else collState.sel.add(id);
+      row.classList.toggle("on", collState.sel.has(id));
+      const box = row.querySelector("input");
+      if(box) box.checked = collState.sel.has(id);
+      collFoot();
+    };
+  });
+  list.querySelectorAll("[data-add]").forEach(b=>{
+    b.onclick = (e)=>{ e.stopPropagation(); collAddIds([b.dataset.add], b); };
+  });
+  const more = $("collMore");
+  if(more) more.onclick = ()=> collLoad(false);
+  collFoot();
+}
+
+function collFoot(){
+  const n = collState.sel.size;
+  const btn = $("collAdd");
+  btn.textContent = n ? `Add ${n} to queue` : "Add 0 to queue";
+  btn.disabled = n === 0;
+  const loadedAll = collState.items.length >= collState.total;
+  $("collSelAll").textContent = loadedAll ? "Select all" : "Select loaded";
+}
+
+async function collAddIds(ids, btn){
+  if(!ids.length) return;
+  const primary = btn && btn.id === "collAdd";
+  const label = btn ? btn.textContent : "";
+  if(btn){ btn.disabled = true; btn.textContent = "Adding…"; }
+  try{
+    const r = await api("/api/add-many", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ids, category: catForAdd()})
+    });
+    const bits = [];
+    if(r.added.length) bits.push(`queued ${r.added.length}`);
+    if(r.skipped.length) bits.push(`${r.skipped.length} already queued`);
+    if(r.invalid && r.invalid.length) bits.push(`${r.invalid.length} not a valid id`);
+    toast(bits.join(" · ") || "Nothing added");
+    // `covered` only knows an identifier once its job has resolved, so mark the
+    // rows from the add response rather than waiting for a poll to catch up.
+    for(const a of (r.added || [])){
+      const ident = a.identifier || a.label;
+      const it = collState.items.find(x => x.id === ident);
+      if(it) it.have = a.status || "queued";
+    }
+    collState.sel.clear();
+    await refreshCovered();
+    collRender();
+    tick();
+  }catch(e){
+    toast("Could not add: " + e.message);
+  }finally{
+    // The footer button is re-labelled by collFoot(); a row button keeps its own.
+    if(btn && !primary){ btn.textContent = label; btn.disabled = false; }
+  }
+}
+
+$("collClose").onclick = collClose;
+$("collModal").onclick = (e)=>{ if(e.target === $("collModal")) collClose(); };
+$("collFilter").oninput = (e)=>{ collState.q = e.target.value; collRender(); };
+$("collOrder").onchange = (e)=>{ collState.order = e.target.value; collLoad(true); };
+$("collSelAll").onclick = ()=>{
+  // Only what is loaded: selecting 4,000 unfetched issues behind your back
+  // would be a queue nobody asked for. The label says "Select loaded" when
+  // there is more to fetch.
+  collState.items.forEach(it=>collState.sel.add(it.id));
+  collRender();
+};
+$("collSelNone").onclick = ()=>{ collState.sel.clear(); collRender(); };
+$("collAdd").onclick = ()=> collAddIds([...collState.sel], $("collAdd"));
+document.addEventListener("keydown", (e)=>{
+  if(e.key === "Escape" && !$("collModal").hidden) collClose();
+});
 
 $("selAdd").onclick = addSelected;
 $("selClear").onclick = ()=>{
@@ -2632,7 +2940,8 @@ function libDetailHtml(it){
     const word = {planned:"ready to download", queued:"queued to download",
                   resume:"resuming", resolving:"finding files",
                   downloading:"downloading", verifying:"checking the file",
-                  failed:"download failed", cancelled:"cancelled"}[it.status]
+                  failed:"download failed", cancelled:"cancelled",
+                  shelf:"kept for reading — no file on disk"}[it.status]
                  || it.status;
     rows.push(["State", word]);
   }
@@ -2647,6 +2956,10 @@ function libDetailHtml(it){
   if(it.downloaded && it.readable && !it.partial){
     actions.push(`<button class="btn ghost sm" data-delrow="${esc(it.key)}"
        title="Delete this file from disk">Delete</button>`);
+  }
+  if(it.shelf && it.identifier){
+    actions.push(`<button class="btn ghost sm" data-unshelf="${esc(it.identifier)}"
+       title="Take this title off the shelf — nothing on disk is touched">Remove from library</button>`);
   }
   if(it.downloaded && it.identifier && it.item_url){
     actions.push(`<a class="btn ghost sm" href="${esc(it.item_url)}" target="_blank"
@@ -2771,7 +3084,7 @@ function pendingRowHtml(it, on, tick, exists){
   const label = {planned:"ready to download", queued:"queued",
                  resume:"resuming", resolving:"resolving",
                  downloading:"downloading", verifying:"verifying",
-                 failed:"failed"}[it.status] || it.status;
+                 failed:"failed", shelf:"in library"}[it.status] || it.status;
   // A partial file exists but cannot be read yet; say "downloading", not
   // "not downloaded", and never offer the reader.
   const state = exists ? `part-downloaded` : "not downloaded";
@@ -2828,6 +3141,21 @@ $("libSelCancel").onclick = ()=>{
 $("libDelSel").onclick = async ()=>{
   const picked = libItems.filter(i => libSelected.has(i.key));
   if(!picked.length) return;
+  const shelfOnly = picked.filter(i => i.shelf && !i.downloaded);
+  const onDisk = picked.filter(i => !(i.shelf && !i.downloaded));
+  if(!onDisk.length){
+    if(!confirm(`Remove ${shelfOnly.length} title${shelfOnly.length===1?"":"s"} ` +
+                `from the library?\n\nNothing on disk is touched.`)) return;
+    for(const it of shelfOnly){
+      await api("/api/unshelf", {method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ident: it.identifier})}).catch(()=>{});
+    }
+    libSelected.clear(); libSelectMode = false;
+    await loadLibrary();
+    toast(`Removed ${shelfOnly.length} from the library`);
+    return;
+  }
   const names = picked.map(i => i.name);
   const ok = confirm(
     `Delete ${picked.length} file${picked.length===1?"":"s"} from disk?\n\n` +
@@ -3248,7 +3576,8 @@ async function openStream(item){
   }catch(e){ toast("Could not reach archive.org: " + e.message); return; }
   const count = meta.pages || 0;
 
-  const done = await api(`/api/progress?key=${encodeURIComponent(item.key)}`)
+  const key = item.key || meta.key || "";
+  const done = await api(`/api/progress?key=${encodeURIComponent(key)}`)
                      .catch(()=>({page: 0}));
 
   const wrap = document.createElement("div");
@@ -3276,7 +3605,7 @@ async function openStream(item){
     <div class="rstage" id="rstage"><div class="rfit"><img id="rimg" alt=""></div></div>`;
   document.body.appendChild(wrap);
 
-  readerState = {job: item.job, file: item.name, key: item.key,
+  readerState = {job: item.job, file: item.name, key: key,
                  ident: item.ident, stream: true,
                  page: Math.max(0, (done && done.page) || 0),
                  count: count || 0, zoom: 1};

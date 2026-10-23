@@ -333,7 +333,7 @@ def clear_caches():
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "HardlyReading/2.8.0"
+    server_version = "HardlyReading/2.9.0"
 
     def log_message(self, fmt, *args):
         pass  # quiet
@@ -668,6 +668,28 @@ class Handler(BaseHTTPRequestHandler):
             except Exception as e:  # noqa: BLE001
                 return self._send(502, {"error": str(e)})
 
+        if path == "/api/collection":
+            # The search drill-down: one window of a collection's members.
+            ident = (qs.get("id") or [""])[0].strip()
+            if not ident:
+                return self._send(400, {"error": "missing id"})
+            try:
+                offset = int((qs.get("offset") or ["0"])[0] or 0)
+                rows = int((qs.get("rows") or ["100"])[0] or 100)
+            except ValueError:
+                return self._send(400, {"error": "bad paging"})
+            order = (qs.get("order") or ["oldest"])[0]
+            try:
+                res = ENGINE.collection_items(ident, offset=offset, rows=rows,
+                                              order=order)
+            except ValueError as e:
+                return self._send(400, {"error": str(e)})
+            except Exception as e:  # noqa: BLE001
+                return self._send(502, {"error": str(e)})
+            if not res["total"]:
+                return self._send(404, {"error": "nothing listed under that collection"})
+            return self._send(200, res)
+
         if path == "/api/files":
             jid = (qs.get("id") or [""])[0]
             d = self._resolve_dir(jid)
@@ -749,7 +771,8 @@ class Handler(BaseHTTPRequestHandler):
                 if not n:
                     return self._send(200, {"pages": 0, "ident": ident,
                                             "known": False})
-                return self._send(200, {"pages": n, "ident": ident, "known": True})
+                return self._send(200, {"pages": n, "ident": ident, "known": True,
+                                        "key": engine.book_key({"identifier": ident})})
             ident = (qs.get("ident") or [""])[0]
             try:
                 page = int((qs.get("page") or ["0"])[0])
@@ -917,6 +940,23 @@ class Handler(BaseHTTPRequestHandler):
                     entry={"outname": f["name"],
                            "desc": known_desc.get(f["name"].lower(), "")},
                 ))
+            # Kept-but-not-downloaded titles: they belong in the library next to
+            # the files, and they read by streaming.
+            have = {it.get("identifier") for it in items if it.get("identifier")}
+            for sh in ENGINE.shelf:
+                ident = sh.get("ident") or ""
+                if not ident or ident in have:
+                    continue
+                it = self._library_item(
+                    job=ENGINE.SHELF_PREFIX + ident,
+                    series=sh.get("name") or ident,
+                    name=sh.get("name") or ident,
+                    path="",
+                    entry={"identifier": ident, "desc": sh.get("desc") or ""},
+                    status="shelf",
+                )
+                it["shelf"] = True
+                items.append(it)
             favs = ENGINE.favourites()
             hiddens = ENGINE.hidden_keys()
             # A library row borrows the category of the job that produced it, so
@@ -1024,6 +1064,23 @@ class Handler(BaseHTTPRequestHandler):
             ENGINE.set_hidden(key, bool(body.get("hidden")))
             return self._send(200, {"key": key, "hidden": bool(body.get("hidden"))})
 
+        if path == "/api/shelf":
+            ident = (body.get("ident") or "").strip()
+            if not ident:
+                return self._send(400, {"error": "no identifier"})
+            ok = ENGINE.shelf_add(ident, (body.get("name") or "").strip(),
+                                  (body.get("desc") or "").strip())
+            if not ok:
+                return self._send(400, {"error": "could not add that item"})
+            return self._send(200, {"ident": ident, "shelf": ENGINE.shelf_ids()})
+
+        if path == "/api/unshelf":
+            ident = (body.get("ident") or "").strip()
+            if not ident:
+                return self._send(400, {"error": "no identifier"})
+            ENGINE.shelf_remove(ident)
+            return self._send(200, {"ident": ident, "shelf": ENGINE.shelf_ids()})
+
         if path == "/api/categories":
             action = (body.get("action") or "").strip()
             try:
@@ -1079,6 +1136,23 @@ class Handler(BaseHTTPRequestHandler):
                 except Exception as e:  # noqa: BLE001
                     errors.append({"url": url, "error": str(e)})
             return self._send(200, {"added": added, "errors": errors})
+
+        if path == "/api/add-many":
+            # Explicit identifiers from the collection browser: each one becomes
+            # its own item job, so ten picked issues are ten jobs, not the run.
+            ids = body.get("ids") or []
+            if isinstance(ids, str):
+                ids = [x.strip() for x in ids.splitlines() if x.strip()]
+            if not isinstance(ids, list):
+                return self._send(400, {"error": "ids must be a list"})
+            ids = [str(x) for x in ids][:500]
+            if not ids:
+                return self._send(400, {"error": "nothing to add"})
+            category = str(body.get("category") or "")
+            try:
+                return self._send(200, ENGINE.add_many(ids, category=category))
+            except Exception as e:  # noqa: BLE001
+                return self._send(400, {"error": str(e)})
 
         if path == "/api/progress":
             try:
