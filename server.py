@@ -333,7 +333,7 @@ def clear_caches():
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "HardlyReading/2.9.0"
+    server_version = "HardlyReading/2.9.1"
 
     def log_message(self, fmt, *args):
         pass  # quiet

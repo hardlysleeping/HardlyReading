@@ -3644,9 +3644,14 @@ function paintPage(){
     // shared onload hook the downloaded-book reader installs.
     img.onload = () => applyZoom();
     img.src = `/api/stream?ident=${encodeURIComponent(s.ident)}&page=${s.page}`;
-    // A streamed page can fail (offline, item restricted) — say so in the bar
-    // instead of leaving a broken image.
-    img.onerror = ()=>{ const el = $("rpg"); if(el) el.textContent = "page unavailable"; };
+    // A streamed page can fail (offline, item restricted, or an item with no
+    // page images at all) — say so in the bar instead of leaving a broken image.
+    // The element is `rpage`; a typo here once meant failures said nothing.
+    img.onerror = ()=>{
+      const el = $("rpage");
+      if(!el) return;
+      el.textContent = s.page === 0 ? "no page images" : "page unavailable";
+    };
   }else{
     const q = `id=${encodeURIComponent(s.job)}&file=${encodeURIComponent(s.file)}`;
     img.src = `/api/page?${q}&page=${s.page}`;

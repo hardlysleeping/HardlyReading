@@ -3,6 +3,16 @@
 Notable changes to HardlyReading. Versions are tagged on GitHub with matching
 release notes.
 
+## [2.9.1] — 2026-10-22
+
+### Fixed
+
+- A streamed page that fails to load now says so. The handler wrote to an element
+  that does not exist (`rpg` instead of `rpage`), so an item with no page images,
+  or one archive.org refuses, left a blank white stage with no explanation.
+  The first page reads "no page images"; later pages read "page unavailable".
+- Settings screenshot refreshed to match the current dialog.
+
 ## [2.9.0] — 2026-10-22
 
 ### Added
@@ -772,6 +782,7 @@ First release.
 - Built-in CBZ / CBR / PDF reader; CBR needs `unrar`, `bsdtar` or `7z`
 - Cross-platform launcher that finds `aria2c` and opens the browser
 
+[2.9.1]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.9.1
 [2.9.0]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.9.0
 [2.8.0]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.8.0
 [2.7.4]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.7.4
