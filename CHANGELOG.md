@@ -3,6 +3,16 @@
 Notable changes to HardlyReading. Versions are tagged on GitHub with matching
 release notes.
 
+## [2.10.2] — 2026-10-22
+
+### Fixed
+
+- The description backfill thread is only started when there is a job that
+  actually lacks a description. Started unconditionally, every short-lived engine
+  left a daemon thread alive that did nothing but sleep; a test run creates dozens
+  of them, and on CPython 3.10 the suite passed all 71 tests and then segfaulted
+  during interpreter shutdown.
+
 ## [2.10.1] — 2026-10-22
 
 ### Fixed
@@ -842,6 +852,7 @@ First release.
 - Built-in CBZ / CBR / PDF reader; CBR needs `unrar`, `bsdtar` or `7z`
 - Cross-platform launcher that finds `aria2c` and opens the browser
 
+[2.10.2]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.10.2
 [2.10.1]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.10.1
 [2.10.0]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.10.0
 [2.9.2]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.9.2

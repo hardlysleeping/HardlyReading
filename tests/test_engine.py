@@ -635,6 +635,33 @@ class HiddenCssTest(unittest.TestCase):
         self.assertEqual(offenders, [], "classes needing a [hidden] rule")
 
 
+class BackfillThreadTest(unittest.TestCase):
+    """A background thread that only sleeps is a thread that is still running
+    when the interpreter shuts down. On 3.10 that segfaulted the suite."""
+
+    def tearDown(self):
+        fresh_engine()          # leave the shared temp state empty for others
+
+    def test_no_thread_when_there_is_nothing_to_backfill(self):
+        fresh_engine()          # clear, then read that cleared state back
+        e = engine.Engine()
+        self.assertIsNone(e._backfill_thread)
+
+    def test_a_job_without_a_description_starts_one(self):
+        e = fresh_engine()
+        job = engine.Job(id="j1", kind="item", source="x", label="x",
+                         status="done")
+        job.items = [{"identifier": "some-item", "outname": "a.pdf"}]
+        with e.lock:
+            e.jobs.append(job)
+            e.save_state()          # the next engine reads state from disk
+        with mock.patch.object(engine.Engine, "backfill_descriptions",
+                              lambda self: None):
+            e2 = engine.Engine()
+        self.assertIsNotNone(e2._backfill_thread)
+        e2._backfill_thread.join(5)
+
+
 class AdvancedSearchTest(unittest.TestCase):
     """Advanced search has to reach archive.org as real query syntax, and only
     as syntax this app composed itself."""

@@ -146,7 +146,7 @@ def http_json(url: str, timeout: int = 60):
     """GET a URL and return parsed JSON. No retry here — callers that can
     recover (the resolver, the per-item probe) do their own attempts."""
 
-    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/2.10.1"})
+    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/2.10.2"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.load(r)
 
@@ -885,7 +885,19 @@ class Engine:
         # Jobs queued before descriptions were stored have none. Fill them in
         # the background from archive.org, once, so old rows explain themselves
         # without the user re-adding anything.
-        threading.Thread(target=self.backfill_descriptions, daemon=True).start()
+        #
+        # Only started when there is something to fill: a thread per engine that
+        # only sleeps through interpreter shutdown left the test suite with ~30
+        # of them alive at exit, which segfaulted the run on CPython 3.10.
+        needs_backfill = any(
+            not j.desc and any(i.get("identifier") for i in j.items)
+            for j in self.jobs)
+        self._backfill_thread = None
+        if needs_backfill:
+            self._backfill_thread = threading.Thread(
+                target=self.backfill_descriptions, daemon=True,
+                name="desc-backfill")
+            self._backfill_thread.start()
 
     # ---- start-up integration
     UNIT_NAME = "hardlyreading.service"
