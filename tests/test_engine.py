@@ -635,6 +635,70 @@ class HiddenCssTest(unittest.TestCase):
         self.assertEqual(offenders, [], "classes needing a [hidden] rule")
 
 
+class AdvancedSearchTest(unittest.TestCase):
+    """Advanced search has to reach archive.org as real query syntax, and only
+    as syntax this app composed itself."""
+
+    def test_no_fields_means_no_filters(self):
+        self.assertEqual(engine.advanced_filters(), "")
+        self.assertEqual(engine.advanced_filters(language="klingon",
+                                                 year_from="", year_to=""), "")
+
+    def test_years_are_validated_and_ordered(self):
+        # UI sends the boxes in the order typed; the range is still a range.
+        self.assertEqual(engine.advanced_filters(year_from="1979", year_to="1970"),
+                         "year:[1970 TO 1979]")
+        # One bound is an open range, not a broken one.
+        self.assertEqual(engine.advanced_filters(year_from="1970"), "year:[1970 TO *]")
+        self.assertEqual(engine.advanced_filters(year_to="1979"), "year:[* TO 1979]")
+        # Junk is dropped rather than pasted in.
+        self.assertEqual(engine.advanced_filters(year_from="19"), "")
+        self.assertEqual(engine.advanced_filters(year_from="19xy"), "")
+
+    def test_language_matches_the_tokens_the_index_uses(self):
+        # Most items carry the ISO code, some the English word. Matching only
+        # one of them silently returned 4 results instead of 621.
+        self.assertEqual(engine.advanced_filters(language="English"),
+                         "language:(eng OR English)")
+        self.assertEqual(engine.advanced_filters(language="  german "),
+                         "language:(ger OR deu OR German)")
+
+    def test_a_quote_cannot_escape_its_phrase(self):
+        # The value ends up inside a Lucene phrase; a stray quote would let it
+        # become query syntax of the caller's choosing.
+        got = engine.advanced_filters(creator='harvey" OR collection:secret')
+        self.assertEqual(got, 'creator:("harvey OR collection:secret")')
+        self.assertEqual(got.count('"'), 2)
+        self.assertNotIn(") OR collection", got)
+
+    def test_filters_and_sort_reach_the_request(self):
+        seen = {}
+
+        def fake_json(url):
+            seen.setdefault("urls", []).append(url)
+            return {"response": {"numFound": 1, "start": 0,
+                                 "docs": [{"identifier": "x", "title": "X"}]}}
+
+        with mock.patch.object(engine, "http_json", fake_json):
+            engine.search_documents("mad magazine", rows=5,
+                                    filters="year:[1970 TO 1979]",
+                                    sort="publicdate asc")
+
+        # Classifying the page costs one metadata call per result, so the search
+        # URL is not necessarily the last one asked for.
+        url = next(u for u in seen["urls"] if "advancedsearch" in u)
+        self.assertIn("year%3A%5B1970+TO+1979%5D", url)      # the filter
+        self.assertIn("sort%5B%5D=publicdate+asc", url)       # the sort
+        # Scoped, then narrowed: the document restriction is not replaced.
+        self.assertIn("mediatype%3A%28texts%29", url)
+
+    def test_every_offered_sort_is_a_known_mode(self):
+        # The UI offers these keys; a typo would silently fall back.
+        for key in ("", "downloads", "newest", "oldest", "title"):
+            self.assertIn(key, engine.SORT_MODES)
+        self.assertEqual(engine.SORT_MODES["newest"], "publicdate desc")
+
+
 class ShelfTest(unittest.TestCase):
     """Titles kept in the library with no file on disk."""
 

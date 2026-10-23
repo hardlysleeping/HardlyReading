@@ -333,7 +333,7 @@ def clear_caches():
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "HardlyReading/2.9.2"
+    server_version = "HardlyReading/2.10.0"
 
     def log_message(self, fmt, *args):
         pass  # quiet
@@ -661,8 +661,18 @@ class Handler(BaseHTTPRequestHandler):
                 # Honour what was asked for; the UI offers 10/25/50/100 but a
                 # caller asking for 3 should get 3, not 10.
                 rows = max(1, min(100, rows))
+                # Advanced search: a whitelisted sort plus ANDed clauses, so a
+                # filter the UI offers is one archive.org actually applied.
+                sort = engine.SORT_MODES.get((qs.get("sort") or [""])[0], "")
+                filters = engine.advanced_filters(
+                    year_from=(qs.get("year_from") or [""])[0],
+                    year_to=(qs.get("year_to") or [""])[0],
+                    language=(qs.get("lang") or [""])[0],
+                    creator=(qs.get("creator") or [""])[0],
+                    subject=(qs.get("subject") or [""])[0])
                 res = engine.search_documents(query, page=page, rows=rows,
-                                              kind=filt)
+                                              kind=filt, filters=filters,
+                                              sort=sort)
                 res["rows"] = rows
                 return self._send(200, res)
             except Exception as e:  # noqa: BLE001

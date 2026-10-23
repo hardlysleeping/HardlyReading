@@ -3,6 +3,40 @@
 Notable changes to HardlyReading. Versions are tagged on GitHub with matching
 release notes.
 
+## [2.10.0] — 2026-10-22
+
+### Added
+
+- A detail pane in Search. Clicking a result opens it on the right — cover, the
+  whole description, every action for that title, and a link to archive.org —
+  while the results keep their place. On a narrow screen the pane is a full sheet
+  with its own close button.
+- Advanced search: year from, year to, language, creator, subject, and sort
+  order (most downloaded, newest, oldest, title A–Z). Filters become real
+  advancedsearch clauses ANDed onto the scoped query, and their summary stays
+  visible beside the button after the panel is closed.
+- Per-issue actions inside a collection: **Read** streams that issue now,
+  **Keep** holds it in the library with no file behind it, **Add** queues it.
+- **Download** in the detail pane queues one result without entering selection
+  mode.
+
+### Changed
+
+- Selecting results is a mode. **Select** turns ticking on and **Done selecting**
+  leaves it, clearing the ticks; an ordinary click opens the pane instead of
+  quietly selecting the card. A stray click can no longer put something in the
+  queue.
+- The reader sits above modal dialogs, so reading an issue out of a collection no
+  longer opens it behind the sheet.
+
+### Fixed
+
+- A scan archive.org refuses to serve (HTTP 403, typically lending-only) now says
+  so in the reader with a link to the item, instead of claiming the item has no
+  page images. Items that genuinely have none say that instead.
+- Repainting the results — a job changing state, select mode toggling — no longer
+  re-fetches the pane's description or scrolls the pane back to the top.
+
 ## [2.9.2] — 2026-10-22
 
 ### Changed
@@ -799,6 +833,7 @@ First release.
 - Built-in CBZ / CBR / PDF reader; CBR needs `unrar`, `bsdtar` or `7z`
 - Cross-platform launcher that finds `aria2c` and opens the browser
 
+[2.10.0]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.10.0
 [2.9.2]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.9.2
 [2.9.1]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.9.1
 [2.9.0]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.9.0

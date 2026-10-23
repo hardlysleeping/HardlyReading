@@ -103,8 +103,8 @@ UI never drives a download directly — it only posts intent and reads back stat
 
 ## Screenshots
 
-Search — descriptions under each result, click **more** for the whole blurb;
-tick the ones you want and add them together:
+Search — click a result and it opens in the pane on the right, results keeping
+their place; **Select** turns ticking on when you want to queue several:
 
 ![Search](docs/search.png)
 
@@ -146,6 +146,10 @@ and whether the queue or the library already has it.
 
 From there:
 
+- **Read** opens that issue in the reader at once, streamed from archive.org
+  with nothing downloaded.
+- **Keep** puts it in your library with no file behind it, so it is waiting for
+  you later; the button becomes **Kept ✓** and pressing it again undoes it.
 - **Add** on a row grabs that one issue.
 - Tick any number of rows and **Add N to queue** grabs exactly those.
 - **Filter issues…** narrows the list while you pick; **oldest first / newest
@@ -237,9 +241,29 @@ if anything is missing — it will not half-start.
 
 ### Searching and picking
 
-Search results are **ticked, not added on click** — click a card to select it,
-then use the bar that appears to queue the whole selection at once. Nothing is
-queued until you say so.
+Clicking a result opens it in a pane on the right — cover, full description and
+every action for that title — while the results stay where they were. Clicking
+the blurb itself still expands it in place. No click queues anything.
+
+Queueing several results at once is a mode, not the meaning of every click.
+Press **Select** and the cards grow ticks; pick what you want, then queue them
+together. Press **Done selecting** to leave the mode, which clears the ticks so a
+stray click can never add something you did not choose.
+
+**Download** in the pane queues that one item. **Read** streams it without
+downloading, **Add to library** keeps it with no file behind it, and **Browse
+issues** opens a collection.
+
+**Advanced** opens the filters: year from/to, language, creator, subject, and a
+sort order (most downloaded, newest, oldest, title A–Z). They are sent as real
+clauses — `year:[1970 TO 1979]`, `language:(eng OR English)` — ANDed onto the
+scoped query, so they narrow it rather than replace it. The summary stays beside
+the button when the panel is closed, because a filter you cannot see is one that
+will confuse you later.
+
+Language uses the tokens archive.org actually indexes: most items carry the ISO
+code (`eng`), a few the English word, so both are matched. Empty fields are
+ignored, and a year that is not four digits is dropped rather than sent.
 
 **Add all results to queue** asks for confirmation first, because one click can
 queue a thousand items.

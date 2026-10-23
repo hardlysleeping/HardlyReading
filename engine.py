@@ -146,7 +146,7 @@ def http_json(url: str, timeout: int = 60):
     """GET a URL and return parsed JSON. No retry here — callers that can
     recover (the resolver, the per-item probe) do their own attempts."""
 
-    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/2.9.2"})
+    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/2.10.0"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.load(r)
 
@@ -392,10 +392,80 @@ def useful_desc(desc: str, title: str) -> str:
     return desc
 
 
+# Sort modes offered by the search UI. archive.org's advancedsearch takes these
+# as sort[] values; "" is left out so its own ordering (most downloaded) stands.
+SORT_MODES = {
+    "": "downloads desc",
+    "downloads": "downloads desc",
+    "newest": "publicdate desc",
+    "oldest": "publicdate asc",
+    "title": "titleSorter asc",
+}
+
+# Only the languages the UI offers, mapped to the tokens the index actually
+# uses. Most items carry the ISO 639 code ("eng"), a minority the English word
+# ("English") — matching only one of them silently dropped most results, which
+# is why both are listed. A free-text language field would also be a way to
+# write arbitrary query syntax.
+ADVANCED_LANGUAGES = {
+    "english": ["eng", "English"],
+    "spanish": ["spa", "Spanish"],
+    "french": ["fre", "fra", "French"],
+    "german": ["ger", "deu", "German"],
+    "italian": ["ita", "Italian"],
+    "portuguese": ["por", "Portuguese"],
+    "dutch": ["dut", "nld", "Dutch"],
+    "japanese": ["jpn", "Japanese"],
+}
+
+
+def _lucene_phrase(value, limit: int = 120) -> str:
+    """A quoted phrase safe to paste into a query.
+
+    Quotes and backslashes are the only characters that can end a phrase early,
+    so they are dropped; the rest is plain text inside quotes.
+    """
+    v = str(value or "").replace('"', " ").replace("\\", " ")
+    v = " ".join(v.split())[:limit]
+    return f'"{v}"' if v else ""
+
+
+def advanced_filters(year_from=None, year_to=None, language="", creator="",
+                     subject="") -> str:
+    """Compose the extra clauses for an advanced search. Returns "" if unused.
+
+    Every value is validated or quoted: this string goes straight into the
+    query sent to archive.org, so a stray quote must not be able to add clauses
+    of its own.
+    """
+    parts = []
+
+    def year(v):
+        v = str(v or "").strip()
+        return v if v.isdigit() and len(v) == 4 else ""
+
+    y1, y2 = year(year_from), year(year_to)
+    if y1 and y2 and y1 > y2:
+        y1, y2 = y2, y1
+    if y1 or y2:
+        parts.append(f"year:[{y1 or '*'} TO {y2 or '*'}]")
+
+    langs = ADVANCED_LANGUAGES.get(str(language or "").strip().lower())
+    if langs:
+        parts.append("language:(" + " OR ".join(langs) + ")")
+
+    for field, value in (("creator", creator), ("subject", subject)):
+        phrase = _lucene_phrase(value)
+        if phrase:
+            parts.append(f"{field}:({phrase})")
+
+    return " AND ".join(parts)
+
+
 def search_page(query: str, rows: int = 24, page: int = 1,
                 mediatype: str = "texts", sort: str = "downloads desc",
                 title_only: bool = True, collections_only: bool = False,
-                extra_fields=None):
+                extra_fields=None, filters: str = ""):
     """Search archive.org for browsing.
 
     Scoping is shared with the queue path via scope_query() so browsing and
@@ -411,6 +481,10 @@ def search_page(query: str, rows: int = 24, page: int = 1,
             f"{query} AND mediatype:(collection)"
     else:
         q = scope_query(query, mediatype) if title_only else query
+    # Advanced filters are ANDed after scoping so they narrow the scoped query
+    # rather than replacing its document restriction.
+    if filters:
+        q = f"({q}) AND {filters}"
 
     fields = ["identifier", "title", "year", "mediatype", "downloads",
               "creator", "description"]
@@ -470,7 +544,8 @@ def search_page(query: str, rows: int = 24, page: int = 1,
 
 
 def search_documents(query: str, page: int = 1, rows: int = 24,
-                     kind: str = "all", workers: int = 10):
+                     kind: str = "all", workers: int = 10,
+                     filters: str = "", sort: str = ""):
     """Search documents, optionally filtered by what each result HOLDS.
 
     `kind`:
@@ -487,7 +562,8 @@ def search_documents(query: str, page: int = 1, rows: int = 24,
         # documents-only `mediatype:(texts)` filter. Query the container type
         # directly for this filter, then confirm it really holds no payload.
         raw = search_page(query, rows=max(rows * 3, 60), page=page,
-                          collections_only=True)
+                          collections_only=True, filters=filters,
+                          sort=sort or "downloads desc")
         idents = [d["identifier"] for d in raw["docs"]]
         probed = {p["identifier"]: p for p in classify_many(idents, workers=workers)}
         docs = []
@@ -509,7 +585,8 @@ def search_documents(query: str, page: int = 1, rows: int = 24,
     if kind == "bundle":
         # Ask archive.org for a wide page, classify, then take the first N that
         # match — otherwise a filtered page can come back nearly empty.
-        raw = search_page(query, rows=max(rows * 4, 60), page=page)
+        raw = search_page(query, rows=max(rows * 4, 60), page=page,
+                          filters=filters, sort=sort or "downloads desc")
         idents = [d["identifier"] for d in raw["docs"]]
         probed = classify_many(idents, workers=workers)
         by_id = {p["identifier"]: p for p in probed}
@@ -530,7 +607,8 @@ def search_documents(query: str, page: int = 1, rows: int = 24,
             "docs": docs,
         }
 
-    raw = search_page(query, rows=rows, page=page)
+    raw = search_page(query, rows=rows, page=page, filters=filters,
+                      sort=sort or "downloads desc")
     idents = [d["identifier"] for d in raw["docs"]]
     probed = {p["identifier"]: p for p in classify_many(idents, workers=workers)}
     for d in raw["docs"]:

@@ -362,6 +362,62 @@
   .spin.lg{width:22px;height:22px;border-width:2.5px;margin-right:10px;vertical-align:-5px}
   @keyframes spin{to{transform:rotate(360deg)}}
   .results.busy{opacity:.45;transition:opacity .15s;pointer-events:none}
+
+  /* ---------- search: toolbar, filters, result + detail split ---------- */
+  .srow{display:flex;align-items:center;gap:8px;margin-top:12px;flex-wrap:wrap}
+  .srow .sp{flex:1}
+  .srow .btn.on{background:rgba(91,141,255,.16);border-color:var(--accent);color:#fff}
+  .adv{margin-top:12px;border:1px solid var(--line);border-radius:12px;
+    background:rgba(9,12,18,.55);padding:13px;
+    display:grid;grid-template-columns:repeat(auto-fit,minmax(148px,1fr));gap:11px 12px}
+  .adv[hidden]{display:none}
+  .adv label{display:flex;flex-direction:column;gap:5px;font-size:10.5px;
+    font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--dim)}
+  .adv input,.adv select{height:34px;font-size:13px;background:#090c12;
+    border:1px solid var(--line);border-radius:8px;color:var(--text);padding:0 9px;
+    font-family:inherit;min-width:0}
+  .adv .advfoot{grid-column:1/-1;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .stage{display:grid;grid-template-columns:minmax(0,1fr);gap:18px;align-items:start}
+  .stage.split{grid-template-columns:minmax(0,1fr) minmax(330px,390px)}
+  .stage .col{min-width:0}
+  /* Normal click opens this; selecting is a mode you turn on. */
+  .results .res .tick{opacity:0;pointer-events:none}
+  .results.selmode .res .tick{opacity:1;pointer-events:auto}
+  .res.active{border-color:var(--accent);
+    box-shadow:0 0 0 2px rgba(91,141,255,.22),var(--shadow-2)}
+  .detail{position:sticky;top:76px;max-height:calc(100vh - 104px);overflow:auto;
+    background:linear-gradient(180deg,var(--panel2),#141821);border:1px solid var(--line);
+    border-radius:14px;box-shadow:var(--shadow-2);
+    animation:paneIn .18s ease-out}
+  .detail[hidden]{display:none}
+  @keyframes paneIn{from{opacity:0;transform:translateX(10px)}to{opacity:1;transform:none}}
+  .detail .dhead{position:sticky;top:0;z-index:2;display:flex;align-items:center;gap:9px;
+    padding:10px 12px;border-bottom:1px solid var(--line);border-radius:14px 14px 0 0;
+    background:linear-gradient(180deg,#1b202a,#171b24)}
+  .detail .dkind{font-size:10px;font-weight:800;letter-spacing:.09em;
+    text-transform:uppercase;color:var(--dim)}
+  .detail .dhead .sp{flex:1}
+  .detail .dclose{width:30px;height:30px;border-radius:9px;border:1px solid var(--line);
+    background:var(--panel);color:var(--dim);font:inherit;font-size:15px;line-height:1;
+    cursor:pointer}
+  .detail .dclose:hover{color:var(--text);border-color:var(--accent)}
+  .detail .dcover{display:block;width:100%;max-height:250px;object-fit:contain;
+    background:#0b0e14;border-bottom:1px solid var(--line)}
+  .detail .dbody{padding:14px 15px 16px}
+  .detail h3{font-size:16px;line-height:1.36;margin:0 0 8px}
+  .detail .dmeta{display:flex;flex-wrap:wrap;gap:5px 12px;font-size:11.5px;color:var(--dim)}
+  .detail .ddesc{margin:12px 0 0;font-size:13px;line-height:1.58;color:#d3dae8;
+    white-space:pre-wrap;overflow-wrap:anywhere}
+  .detail .ddesc.empty{display:none}
+  .detail .dact{display:flex;flex-wrap:wrap;gap:7px;margin-top:14px}
+  .detail .dact button{flex:1 1 auto;min-width:108px;background:var(--panel);
+    border:1px solid var(--line);color:var(--text);border-radius:9px;padding:9px 11px;
+    font:600 12.5px/1.2 inherit;cursor:pointer;transition:border-color var(--t),color var(--t)}
+  .detail .dact button:hover{border-color:var(--accent)}
+  .detail .dact button.danger:hover{border-color:var(--err);color:var(--err)}
+  .detail .dsrc{display:inline-block;margin-top:13px;font-size:11.5px;
+    color:var(--dimmer);text-decoration:none;border-bottom:1px dotted var(--line)}
+  .detail .dsrc:hover{color:var(--text)}
   .toast{
     position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(90px);
     background:rgba(26,31,41,.94);border:1px solid var(--line2);border-radius:12px;
@@ -404,7 +460,7 @@
   .chipf.on{background:rgba(91,141,255,.14);border-color:rgba(91,141,255,.75);
     color:var(--accent2);box-shadow:0 0 0 3px rgba(91,141,255,.08)}
   /* reader overlay */
-  .rwrap{position:fixed;inset:0;background:#07080b;z-index:100;
+  .rwrap{position:fixed;inset:0;background:#07080b;z-index:300;
     display:flex;flex-direction:column}
   .rbar{display:flex;align-items:center;gap:12px;padding:10px 16px;
     background:rgba(20,24,33,.92);
@@ -730,6 +786,12 @@
     transition:background var(--t),border-color var(--t)}
   .collrow:hover{background:rgba(255,255,255,.04);border-color:var(--line)}
   .collrow.on{background:rgba(91,141,255,.1);border-color:rgba(91,141,255,.4)}
+  .collacts{display:flex;gap:6px;flex-shrink:0}
+  @media (max-width:720px){
+    .collrow{flex-wrap:wrap}
+    .collacts{width:100%;justify-content:flex-end}
+    .collmain{min-width:0;flex:1}
+  }
   .collrow input[type=checkbox]{-webkit-appearance:none;appearance:none;flex:none;
     width:17px;height:17px;border-radius:5px;border:1px solid var(--line2);
     background:var(--bg2);cursor:pointer;position:relative;
@@ -769,6 +831,16 @@
   #view-library .row .btn.sm{height:32px}
   #libQ{height:32px;font-size:13px}
 
+  /* Too narrow for two columns: the detail pane is a sheet over the results. */
+  @media (max-width:940px){
+    .stage.split{grid-template-columns:minmax(0,1fr)}
+    .detail{position:fixed;inset:0;z-index:150;max-height:none;border-radius:0;
+      border:0;background:#0f131a;overflow:auto}
+    .detail .dhead{border-radius:0;padding:12px 14px}
+    .detail .dcover{max-height:44vh}
+    .detail .dclose{width:34px;height:34px}
+    body.detail-open{overflow:hidden}
+  }
   @media (max-width:720px){
     .wrap{padding:18px 14px 72px}
     .hwrap{padding:12px 14px;gap:10px}
@@ -1080,20 +1152,58 @@ Support the Archive</a>
         <button class="btn ghost md" id="addAllBtn">Add all results to queue</button>
         <span class="hint" style="margin:0" id="addAllHint"></span>
       </div>
-      <div class="selbar" id="selBar" hidden>
-        <span id="selCount">0 selected</span>
+      <div class="srow">
+        <button class="btn ghost sm" id="selToggle" aria-pressed="false"
+                title="Queue several results at once">Select</button>
+        <button class="btn ghost sm" id="advToggle" aria-expanded="false"
+                title="Year, language, creator, subject and sort">Advanced</button>
         <span class="sp"></span>
-        <button class="btn sm" id="selAdd">Add to queue</button>
-        <button class="btn ghost sm" id="selClear">Clear</button>
+        <span class="hint" style="margin:0" id="advSummary"></span>
       </div>
-      <div class="results" id="results"></div>
-      <div class="pager" id="pager" style="display:none">
-        <button id="prev" title="Previous page">‹</button>
-        <span class="plabel" id="pageLabel"></span>
-        <button id="next" title="Next page">›</button>
-        <span class="sp"></span>
-        <label>show <select id="searchSize"></select></label>
-        <select id="searchJump" title="Jump to page"></select>
+      <div class="adv" id="advPanel" hidden>
+        <label>Year from<input id="advYearFrom" inputmode="numeric" maxlength="4"
+                               placeholder="1970"></label>
+        <label>Year to<input id="advYearTo" inputmode="numeric" maxlength="4"
+                             placeholder="1979"></label>
+        <label>Language<select id="advLang">
+          <option value="">any</option>
+          <option>English</option><option>Spanish</option><option>French</option>
+          <option>German</option><option>Italian</option><option>Portuguese</option>
+          <option>Dutch</option><option>Japanese</option>
+        </select></label>
+        <label>Creator<input id="advCreator" placeholder="any"></label>
+        <label>Subject<input id="advSubject" placeholder="any"></label>
+        <label>Sort<select id="advSort">
+          <option value="">most downloaded</option>
+          <option value="newest">newest first</option>
+          <option value="oldest">oldest first</option>
+          <option value="title">title A–Z</option>
+        </select></label>
+        <div class="advfoot">
+          <button class="btn sm" id="advApply">Search with these</button>
+          <button class="btn ghost sm" id="advReset">Reset</button>
+          <span class="hint" style="margin:0">An empty field is ignored.</span>
+        </div>
+      </div>
+      <div class="stage" id="stage">
+        <div class="col">
+          <div class="selbar" id="selBar" hidden>
+            <span id="selCount">0 selected</span>
+            <span class="sp"></span>
+            <button class="btn sm" id="selAdd">Add to queue</button>
+            <button class="btn ghost sm" id="selClear">Clear</button>
+          </div>
+          <div class="results" id="results"></div>
+          <div class="pager" id="pager" style="display:none">
+            <button id="prev" title="Previous page">‹</button>
+            <span class="plabel" id="pageLabel"></span>
+            <button id="next" title="Next page">›</button>
+            <span class="sp"></span>
+            <label>show <select id="searchSize"></select></label>
+            <select id="searchJump" title="Jump to page"></select>
+          </div>
+        </div>
+        <aside class="detail" id="detail" hidden aria-label="Selected result"></aside>
       </div>
     </div>
   </div>
@@ -1876,6 +1986,26 @@ document.addEventListener("click", async (e)=>{
     return;
   }
 
+  // Download one result without hunting for it in a selection bar.
+  const addOne = e.target.closest("[data-addone]");
+  if(addOne){
+    addOne.disabled = true;
+    const id = addOne.dataset.addone;
+    try{
+      const r = await api("/api/add-many", {method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body: JSON.stringify({ids: [id], category: catForAdd()})});
+      if(r.added && r.added.length) toast("Added to the queue");
+      else if(r.skipped && r.skipped.length) toast("Already in the queue");
+      else toast("That item could not be queued");
+      await refreshCovered();
+      if(lastDocs.length) renderCards(lastDocs);
+      tick();
+    }catch(err){ toast(err.message); }
+    addOne.disabled = false;
+    return;
+  }
+
   // Read from a search card: stream the pages, put nothing in the queue.
   const sread = e.target.closest("[data-sread]");
   if(sread){
@@ -1903,6 +2033,7 @@ document.addEventListener("click", async (e)=>{
       delete addShelf.dataset.shelf;
       delete addShelf.dataset.name;
       addShelf.disabled = false;
+      refreshDetail();
       toast("Added to your library");
     }catch(err){ toast(err.message); addShelf.disabled = false; }
     return;
@@ -2177,6 +2308,12 @@ let searchPage = 1, searchQ = "", searchFilter = "all", lastResult = null;
 // Search pages on the server (numFound can be tens of thousands), so its size
 // travels with the request instead of slicing an array we already hold.
 let searchSize = pageSize("search", 25);
+// Selection is a mode you switch on, not the meaning of every click.
+let selMode = false;
+// Which result the right-hand pane is describing, or null.
+let detailId = null;
+// Advanced search: sent as its own params, so the plain query stays readable.
+let adv = {year_from: "", year_to: "", lang: "", creator: "", subject: "", sort: ""};
 
 async function doSearch(){
   const q = $("q").value.trim();
@@ -2200,6 +2337,9 @@ async function loadPage(){
     const params = new URLSearchParams({q: searchQ, page: String(searchPage),
                                         rows: String(searchSize)});
     params.set("filter", searchFilter);
+    for(const k of ["year_from", "year_to", "lang", "creator", "subject", "sort"]){
+      if(adv[k]) params.set(k, adv[k]);
+    }
 
     const r = await api("/api/search?" + params.toString());
     lastResult = r;
@@ -2305,9 +2445,71 @@ function coverFor(id){
   return COVER[c.status] || COVER.queued;
 }
 
+// What a result can do, wherever it is shown: grid card or detail pane.
+function actionsFor(d){
+  const kind = d.hold_kind || "";
+  const isColl = kind === "collection", isBundle = kind === "bundle";
+  const c = covered[d.identifier];
+  const b = [];
+  // A collection or a bundle has no pages of its own, so it opens instead of
+  // pretending its single "page" is readable.
+  if(isColl || isBundle){
+    b.push(`<button data-open="${esc(d.identifier)}" data-name="${esc(d.title)}">Browse issues</button>`);
+  }
+  if(!isColl && d.identifier){
+    b.push(`<button data-sread="${esc(d.identifier)}" data-name="${esc(d.title)}"
+      title="Read straight from archive.org — nothing is downloaded">Read</button>`);
+    if(!(c && c.status === "done")){
+      b.push(shelfIds.has(d.identifier)
+        ? `<button data-unshelf="${esc(d.identifier)}"
+             title="Remove this title from your library">In library ✓</button>`
+        : `<button data-shelf="${esc(d.identifier)}" data-name="${esc(d.title)}"
+             title="Keep it in your library without downloading">Add to library</button>`);
+    }
+  }
+  if(c && c.status === "done"){
+    b.push(`<button data-lib="${esc(c.job)}" data-file="${esc(c.file)}">Open in library</button>`);
+  } else if(c){
+    b.push(`<button class="danger" data-rm="${esc(c.job)}">Remove from queue</button>`);
+  }
+  return b;
+}
+
+// data-rm / data-lib / data-open fire from cards and from the pane, so they are
+// handled once per container rather than bound per button on every repaint.
+function bindActionClicks(root){
+  root.onclick = async (e)=>{
+    if(!e.target.closest("button")) return;
+    const rm = e.target.closest("[data-rm]");
+    if(rm){
+      if(!confirm("Remove this job from the queue? Files already downloaded are kept.")) return;
+      try{
+        await api("/api/remove", {method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body: JSON.stringify({id: rm.dataset.rm})});
+        toast("Removed from queue");
+        await refreshCovered();
+        if(lastResult) renderCards(lastResult.docs);
+      }catch(err){ toast(err.message); }
+      return;
+    }
+    const lib = e.target.closest("[data-lib]");
+    if(lib){ gotoLibrary(lib.dataset.lib, lib.dataset.file); return; }
+    const open = e.target.closest("[data-open]");
+    if(open){
+      const card = open.closest(".res");
+      const title = open.dataset.name ||
+        (card ? card.querySelector(".t").textContent : open.dataset.open);
+      collOpen(open.dataset.open, title);
+      return;
+    }
+  };
+}
+
 function renderCards(docs){
   const host = $("results");
   lastDocs = docs;
+  host.classList.toggle("selmode", selMode);
   host.innerHTML = docs.map(d=>{
     const kind = d.hold_kind || "";
     const isColl = kind === "collection";
@@ -2319,40 +2521,13 @@ function renderCards(docs){
     const y = [d.year, badge].filter(Boolean).join(" · ");
 
     const cv = coverFor(d.identifier);
-    const c  = covered[d.identifier];
     const st = cv ? `<span class="st ${cv.cls}">${cv.sym} ${esc(cv.label)}</span>` : "";
-
-    // Queued work can be pulled out of the queue; finished work can jump to its
-    // library entry. Deleting a downloaded file lives in the Library, not here.
-    // A collection also opens: pick issues out of it rather than taking the run.
-    const actBtns = [];
-    if(isColl){
-      actBtns.push(`<button data-open="${esc(d.identifier)}">Browse issues</button>`);
-    }
-    // A single issue can be read now — streamed, nothing downloaded — and kept
-    // in the library without joining the queue. A collection or a bundle has no
-    // pages of its own, so it only gets Browse.
-    if(!isColl && !isBundle && d.identifier){
-      actBtns.push(`<button data-sread="${esc(d.identifier)}" data-name="${esc(d.title)}"
-        title="Read straight from archive.org — nothing is downloaded">Read</button>`);
-      const downloaded = cv && c && c.status === "done";
-      if(!downloaded){
-        actBtns.push(shelfIds.has(d.identifier)
-          ? `<button data-unshelf="${esc(d.identifier)}"
-               title="Remove this title from your library">In library ✓</button>`
-          : `<button data-shelf="${esc(d.identifier)}" data-name="${esc(d.title)}"
-               title="Keep it in your library without downloading">Add to library</button>`);
-      }
-    }
-    if(cv && c){
-      actBtns.push(c.status === "done"
-        ? `<button data-lib="${esc(c.job)}" data-file="${esc(c.file)}">Open in library</button>`
-        : `<button class="danger" data-rm="${esc(c.job)}">Remove from queue</button>`);
-    }
+    const actBtns = actionsFor(d);
     const acts = actBtns.length ? `<div class="acts">${actBtns.join("")}</div>` : "";
 
     const on = selected.has(d.identifier) ? " sel" : "";
-    return `<div class="res${on}" data-id="${esc(d.identifier)}" data-kind="${esc(kind)}"
+    const act = d.identifier === detailId ? " active" : "";
+    return `<div class="res${on}${act}" data-id="${esc(d.identifier)}" data-kind="${esc(kind)}"
                  title="${esc(d.title)}">
       <span class="tick">✓</span>
       ${st}
@@ -2370,50 +2545,124 @@ function renderCards(docs){
     </div>`;
   }).join("");
 
+  bindActionClicks(host);
   host.querySelectorAll(".res").forEach(el=>{
     el.onclick = (e)=>{
       if(e.target.closest("button")) return;   // action buttons handle their own click
       if(selecting()) return;                  // finishing a drag-select
-      // The blurb is its own control: expand it instead of toggling selection,
-      // which is what clicking anywhere else on the card does.
-      if(e.target.closest(".d, .dmore")){
+      const id = el.dataset.id;
+      // Selection is a mode now: an ordinary click opens the pane instead of
+      // quietly ticking the card you meant to look at.
+      if(selMode){ toggleSelect(id, el); return; }
+      if(e.target.closest(".d, .dmore")){      // the blurb expands in place
         el.classList.toggle("expand");
         const m = el.querySelector(".dmore");
         if(m) m.textContent = el.classList.contains("expand") ? "▴ less" : "▾ more";
         return;
       }
-      toggleSelect(el.dataset.id, el);
+      showDetail(id);
     };
   });
-  host.querySelectorAll("[data-rm]").forEach(b=>{
-    b.onclick = async (e)=>{
-      e.stopPropagation();
-      if(!confirm("Remove this job from the queue? Files already downloaded are kept.")) return;
-      try{
-        await api("/api/remove", {method:"POST",
-          headers:{"Content-Type":"application/json"},
-          body: JSON.stringify({id: b.dataset.rm})});
-        toast("Removed from queue");
-        await refreshCovered();
-        if(lastResult) renderCards(lastResult.docs);
-      }catch(err){ toast(err.message); }
-    };
-  });
-  host.querySelectorAll("[data-lib]").forEach(b=>{
-    b.onclick = (e)=>{
-      e.stopPropagation();
-      gotoLibrary(b.dataset.lib, b.dataset.file);
-    };
-  });
-  host.querySelectorAll("[data-open]").forEach(b=>{
-    b.onclick = (e)=>{
-      e.stopPropagation();
-      const card = b.closest(".res");
-      const title = card ? card.querySelector(".t").textContent : b.dataset.open;
-      collOpen(b.dataset.open, title);
-    };
-  });
+  // A repaint must not leave the pane describing something else.
+  if(detailId) refreshDetail();
   updateSelBar();
+}
+
+// ---------------------------------------------------------------- detail pane
+
+function paintDetail(d, prevDesc){
+  const det = $("detail");
+  const kind = d.hold_kind || "";
+  const isColl = kind === "collection", isBundle = kind === "bundle";
+  const label = isColl ? "Collection" : (isBundle ? "Multi-issue item" : "Issue");
+  const c = covered[d.identifier];
+  const bits = [];
+  if(d.year) bits.push(`<span>${esc(String(d.year))}</span>`);
+  if(isBundle && d.scans) bits.push(`<span>${d.scans} scans in one item</span>`);
+  if(d.creator) bits.push(`<span>${esc(d.creator)}</span>`);
+  if(d.downloads) bits.push(`<span>${Number(d.downloads).toLocaleString()} downloads</span>`);
+  const cv = coverFor(d.identifier);
+  if(cv) bits.push(`<span class="st ${cv.cls}">${cv.sym} ${esc(cv.label)}</span>`);
+
+  // Download is here rather than on the card: one job, one press, and it is the
+  // deliberate action rather than something a stray click can start.
+  const dl = (!isColl && !c && d.identifier)
+    ? `<button data-addone="${esc(d.identifier)}" data-name="${esc(d.title)}"
+         title="Download this item">Download</button>` : "";
+
+  // A repaint (job status changed, select mode toggled) must not throw away the
+  // full description already fetched, nor scroll the pane back to the top.
+  const descText = (prevDesc && prevDesc.textContent.length > (d.desc || "").length)
+    ? prevDesc.textContent : (d.desc || "");
+  det.innerHTML = `
+    <div class="dhead">
+      <span class="dkind">${esc(label)}</span>
+      <span class="sp"></span>
+      <button class="dclose" id="dclose" title="Close" aria-label="Close">✕</button>
+    </div>
+    <img class="dcover" src="${esc(d.thumb)}" alt="" onerror="this.remove()">
+    <div class="dbody">
+      <h3>${esc(d.title)}</h3>
+      <div class="dmeta">${bits.join("")}</div>
+      <p class="ddesc${descText ? "" : " empty"}">${esc(descText)}</p>
+      <div class="dact">${actionsFor(d).join("")}${dl}</div>
+      <a class="dsrc" href="https://archive.org/details/${encodeURIComponent(d.identifier)}"
+         target="_blank" rel="noopener">Open on archive.org ↗</a>
+    </div>`;
+  det.hidden = false;
+  $("stage").classList.add("split");
+  document.body.classList.add("detail-open");
+  const close = $("dclose");
+  if(close) close.onclick = closeDetail;
+  if(!prevDesc) loadDetailDesc(d);
+}
+
+// The card blurb is cut for the grid; the pane can afford the whole thing.
+async function loadDetailDesc(d){
+  try{
+    const r = await api("/api/desc?ident=" + encodeURIComponent(d.identifier) +
+                        "&title=" + encodeURIComponent(d.title || ""));
+    if(detailId !== d.identifier) return;      // the pane has moved on
+    const el = $("detail").querySelector(".ddesc");
+    if(!el) return;
+    const t = (r.desc || "").trim();
+    if(t.length > (d.desc || "").length){
+      el.textContent = t;
+      el.classList.remove("empty");
+    }
+  }catch(e){ /* the short blurb stays — a nicety failing is not an error */ }
+}
+
+function showDetail(id){
+  const d = (lastDocs || []).find(x => x.identifier === id);
+  if(!d) return;
+  detailId = id;
+  paintDetail(d);
+  $("detail").scrollTop = 0;
+  document.querySelectorAll("#results .res").forEach(el =>
+    el.classList.toggle("active", el.dataset.id === id));
+}
+
+function closeDetail(){
+  detailId = null;
+  const det = $("detail");
+  det.hidden = true;
+  det.innerHTML = "";
+  $("stage").classList.remove("split");
+  document.body.classList.remove("detail-open");
+  document.querySelectorAll("#results .res.active").forEach(el =>
+    el.classList.remove("active"));
+}
+
+function refreshDetail(){
+  if(!detailId) return;
+  const d = (lastDocs || []).find(x => x.identifier === detailId);
+  if(!d){ closeDetail(); return; }
+  const det = $("detail");
+  const prev = det.querySelector(".ddesc");
+  const scroll = det.scrollTop;
+  paintDetail(d, prev);
+  det.scrollTop = scroll;
 }
 
 function toggleSelect(id, el){
@@ -2424,8 +2673,11 @@ function toggleSelect(id, el){
 
 function updateSelBar(){
   const n = selected.size;
-  $("selBar").hidden = n === 0;
-  $("selCount").textContent = `${n} selected`;
+  // The bar belongs to select mode; outside it there is no selection to act on.
+  $("selBar").hidden = !selMode;
+  $("selCount").textContent = n ? `${n} selected` : "Tick the results you want";
+  const add = $("selAdd");
+  if(add) add.disabled = n === 0;
 }
 
 function catForAdd(){
@@ -2564,16 +2816,28 @@ function collRender(){
   const left = collState.total - collState.items.length;
   list.innerHTML = rows.map(it=>{
     const st = collStatus(it);
+    const kept = shelfIds.has(it.id);
     const bits = [it.date || it.year,
                   it.size ? fmtBytes(it.size) : "",
-                  st === "done" ? "in library" : (st ? "in queue" : "")].filter(Boolean);
+                  (st === "done" || kept) ? "in library" : (st ? "in queue" : "")].filter(Boolean);
     const on = collState.sel.has(it.id);
+    const name = it.title || it.id;
+    // One issue at a time: read it now, keep it for later, or download it.
     return `<div class="collrow${on ? " on" : ""}" data-id="${esc(it.id)}">
-      <input type="checkbox" ${on ? "checked" : ""} aria-label="Select ${esc(it.title || it.id)}">
-      <span class="collmain"><b>${esc(it.title || it.id)}</b>
+      <input type="checkbox" ${on ? "checked" : ""} aria-label="Select ${esc(name)}">
+      <span class="collmain"><b>${esc(name)}</b>
         <em>${esc(bits.join(" · "))}</em></span>
-      <button class="btn ghost sm collone" data-add="${esc(it.id)}"
-              ${st ? "disabled" : ""}>${st ? "Added" : "Add"}</button>
+      <span class="collacts">
+        <button class="btn ghost sm" data-cread="${esc(it.id)}" data-name="${esc(name)}"
+                title="Open it in the reader — nothing is downloaded">Read</button>
+        ${kept
+          ? `<button class="btn ghost sm" data-cunkeep="${esc(it.id)}"
+               title="Remove this issue from your library">Kept ✓</button>`
+          : `<button class="btn ghost sm" data-ckeep="${esc(it.id)}" data-name="${esc(name)}"
+               title="Keep this issue in your library without downloading it">Keep</button>`}
+        <button class="btn ghost sm collone" data-add="${esc(it.id)}"
+                ${st ? "disabled" : ""}>${st ? "Added" : "Add"}</button>
+      </span>
     </div>`;
   }).join("") +
   (rows.length ? "" : '<div class="empty"><span>Nothing matches that filter.</span></div>') +
@@ -2595,6 +2859,38 @@ function collRender(){
   });
   list.querySelectorAll("[data-add]").forEach(b=>{
     b.onclick = (e)=>{ e.stopPropagation(); collAddIds([b.dataset.add], b); };
+  });
+  // Read an issue straight from the run without downloading the run.
+  list.querySelectorAll("[data-cread]").forEach(b=>{
+    b.onclick = async (e)=>{
+      e.stopPropagation();
+      b.disabled = true;
+      try{
+        await openStream({job: "", name: b.dataset.name,
+                          ident: b.dataset.cread, key: ""});
+      }catch(err){ toast(err.message); }
+      b.disabled = false;
+    };
+  });
+  // Keep one issue in the library with no file behind it.
+  list.querySelectorAll("[data-ckeep], [data-cunkeep]").forEach(b=>{
+    b.onclick = async (e)=>{
+      e.stopPropagation();
+      const id = b.dataset.ckeep || b.dataset.cunkeep;
+      const keeping = Boolean(b.dataset.ckeep);
+      b.disabled = true;
+      try{
+        const r = await api(keeping ? "/api/shelf" : "/api/unshelf", {
+          method: "POST", headers: {"Content-Type": "application/json"},
+          body: JSON.stringify(keeping
+            ? {ident: id, name: b.dataset.name || ""}
+            : {ident: id})
+        });
+        shelfIds = new Set(r.shelf || []);
+        toast(keeping ? "Kept in your library" : "Removed from your library");
+        collRender();
+      }catch(err){ toast(err.message); b.disabled = false; }
+    };
   });
   const more = $("collMore");
   if(more) more.onclick = ()=> collLoad(false);
@@ -2694,6 +2990,61 @@ $("addAllBtn").onclick = async ()=>{
 };
 
 $("searchBtn").onclick = doSearch;
+bindActionClicks($("detail"));
+
+// ---------- select mode ----------
+function setSelMode(on){
+  selMode = on;
+  if(!on) selected.clear();
+  const b = $("selToggle");
+  b.classList.toggle("on", on);
+  b.setAttribute("aria-pressed", String(on));
+  b.textContent = on ? "Done selecting" : "Select";
+  $("results").classList.toggle("selmode", on);
+  if(lastDocs.length) renderCards(lastDocs); else updateSelBar();
+  updateSelBar();
+}
+$("selToggle").onclick = ()=> setSelMode(!selMode);
+
+// ---------- advanced search ----------
+function advRead(){
+  const num = v => (v || "").replace(/\D/g, "").slice(0, 4);
+  adv = {
+    year_from: num($("advYearFrom").value),
+    year_to: num($("advYearTo").value),
+    lang: $("advLang").value,
+    creator: $("advCreator").value.trim(),
+    subject: $("advSubject").value.trim(),
+    sort: $("advSort").value,
+  };
+  const bits = [];
+  if(adv.year_from || adv.year_to)
+    bits.push(`${adv.year_from || "…"}–${adv.year_to || "…"}`);
+  if(adv.lang) bits.push(adv.lang);
+  if(adv.creator) bits.push("creator: " + adv.creator);
+  if(adv.subject) bits.push("subject: " + adv.subject);
+  const sortText = {newest: "newest first", oldest: "oldest first",
+                    title: "title A–Z"}[adv.sort] || "";
+  if(sortText) bits.push(sortText);
+  // The summary stays visible with the panel shut, so a filter cannot quietly
+  // keep shaping results after it is out of sight.
+  $("advSummary").textContent = bits.length ? bits.join(" · ") : "";
+  $("advToggle").classList.toggle("on",
+    Boolean(adv.year_from || adv.year_to || adv.lang || adv.creator ||
+            adv.subject || adv.sort));
+}
+$("advToggle").onclick = ()=>{
+  const panel = $("advPanel");
+  panel.hidden = !panel.hidden;
+  $("advToggle").setAttribute("aria-expanded", String(!panel.hidden));
+};
+$("advApply").onclick = ()=>{ advRead(); if($("q").value.trim()) doSearch(); };
+$("advReset").onclick = ()=>{
+  for(const id of ["advYearFrom", "advYearTo", "advCreator", "advSubject"])
+    $(id).value = "";
+  $("advLang").value = ""; $("advSort").value = "";
+  advRead();
+};
 $("q").onkeydown = e=>{ if(e.key==="Enter") doSearch(); };
 $("prev").onclick = ()=>{ if(searchPage>1){ searchPage--; loadPage(); } };
 $("next").onclick = ()=>{ searchPage++; loadPage(); };
@@ -3630,6 +3981,14 @@ async function openStream(item){
   // firing at a removed reader.
   window._rStreamResize = applyZoom;
   window.addEventListener("resize", window._rStreamResize);
+  if(!count){
+    const n = $("streamnote");
+    if(n){
+      n.style.display = "";
+      n.innerHTML = "<b>archive.org lists no page images for this item.</b> " +
+        "It may only offer a PDF or a bundled file — download it instead.";
+    }
+  }
   paintPage();
 }
 
@@ -3642,13 +4001,31 @@ function paintPage(){
     // shared onload hook the downloaded-book reader installs.
     img.onload = () => applyZoom();
     img.src = `/api/stream?ident=${encodeURIComponent(s.ident)}&page=${s.page}`;
-    // A streamed page can fail (offline, item restricted, or an item with no
-    // page images at all) — say so in the bar instead of leaving a broken image.
-    // The element is `rpage`; a typo here once meant failures said nothing.
-    img.onerror = ()=>{
+    // A streamed page can fail: offline, or archive.org refusing the scan. Say
+    // so instead of leaving a broken image — the element is `rpage`, and a typo
+    // here once meant failures said nothing at all.
+    img.onerror = async ()=>{
       const el = $("rpage");
-      if(!el) return;
-      el.textContent = s.page === 0 ? "no page images" : "page unavailable";
+      if(el) el.textContent = "unavailable";
+      if(s.page !== 0 || s.failureNote) return;
+      s.failureNote = true;
+      // Ask why, once: a 403 is archive.org declining to serve a lending-only
+      // scan, which no amount of paging will fix. A bare count would mislead.
+      let reason = "";
+      try{
+        const r = await fetch(`/api/stream?ident=${encodeURIComponent(s.ident)}&page=0`);
+        const j = await r.json().catch(()=>({}));
+        reason = String(j.error || "");
+      }catch(e){ /* offline: still worth saying the page did not load */ }
+      const note = $("streamnote");
+      if(!note) return;
+      const code = (reason.match(/HTTP (\d{3})/) || [])[1] || "";
+      note.style.display = "";
+      note.innerHTML =
+        `<b>archive.org will not serve this item's pages${code ? ` (HTTP ${code})` : ""}.</b> ` +
+        `A lending-only scan reads as a refusal here; the file itself may still ` +
+        `download fine. <a href="https://archive.org/details/${encodeURIComponent(s.ident)}" ` +
+        `target="_blank" rel="noopener" style="color:inherit">Open it on archive.org ↗</a>`;
     };
   }else{
     const q = `id=${encodeURIComponent(s.job)}&file=${encodeURIComponent(s.file)}`;
