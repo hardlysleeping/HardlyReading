@@ -3,6 +3,23 @@
 Notable changes to HardlyReading. Versions are tagged on GitHub with matching
 release notes.
 
+## [2.9.2] — 2026-10-22
+
+### Changed
+
+- The button on a finished download now opens that title in the **library** instead
+  of launching your operating system's file manager. Your library is where the
+  reading happens; a file manager window was never the useful destination.
+  It jumps to the tab, scrolls the row into view and flashes it.
+- Removed `POST /api/open-folder` and the `open_folder()` helper behind it, which
+  had no other caller once the button changed. Nothing on the server opens a
+  window on your desktop any more.
+
+### Fixed
+
+- If a finished download is no longer in the library (file moved or deleted), the
+  jump now says so instead of doing nothing at all.
+
 ## [2.9.1] — 2026-10-22
 
 ### Fixed
@@ -782,6 +799,7 @@ First release.
 - Built-in CBZ / CBR / PDF reader; CBR needs `unrar`, `bsdtar` or `7z`
 - Cross-platform launcher that finds `aria2c` and opens the browser
 
+[2.9.2]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.9.2
 [2.9.1]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.9.1
 [2.9.0]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.9.0
 [2.8.0]: https://github.com/hardlysleeping/HardlyReading/releases/tag/v2.8.0

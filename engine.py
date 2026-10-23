@@ -146,7 +146,7 @@ def http_json(url: str, timeout: int = 60):
     """GET a URL and return parsed JSON. No retry here — callers that can
     recover (the resolver, the per-item probe) do their own attempts."""
 
-    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/2.9.1"})
+    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/2.9.2"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.load(r)
 
@@ -2899,31 +2899,6 @@ def free_bytes(path: str) -> int:
         return shutil.disk_usage(path).free
     except OSError:
         return 0
-
-
-def open_folder(path: str) -> bool:
-    """Reveal an existing folder in the file manager. Never raises.
-
-    Never creates the folder: a stale path should open nothing rather than
-    silently leave an empty directory behind, which is exactly what a wrong
-    download_dir did once. Returns False when there is nothing to show, so the
-    caller can say so instead of reporting a success that never happened.
-    """
-    if not path or not os.path.isdir(path):
-        return False
-    try:
-        if os.name == "nt":
-            os.startfile(path)  # noqa: S606  (Windows only)
-            return True
-        cmd = ["open", path] if sys.platform == "darwin" else ["xdg-open", path]
-        # xdg-open can block for a long time on a slow desktop and its exit
-        # status says nothing useful, so do not wait on it; report that the
-        # window was asked for, and let the caller show the path as a fallback.
-        subprocess.Popen(cmd, stdout=subprocess.DEVNULL,
-                         stderr=subprocess.DEVNULL, start_new_session=True)
-        return True
-    except Exception:  # noqa: BLE001
-        return False
 
 
 # ---------------------------------------------------------------- downloader

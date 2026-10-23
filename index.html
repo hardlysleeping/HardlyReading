@@ -1347,10 +1347,7 @@ function queueSection(status){
 
 // Inline SVG: no request, no missing-asset icon, and it inherits the button's
 // colour because it uses currentColor.
-const FOLDER_ICON = `<svg viewBox="0 0 16 16" width="13" height="13" fill="none"
-  stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"
-  aria-hidden="true" focusable="false">
-  <path d="M1.8 3.6h4l1.2 1.6h7.2v7.2a.8.8 0 0 1-.8.8H2.6a.8.8 0 0 1-.8-.8z"/></svg>`;
+
 
 const SECTION_TITLE = {
   running: ["Downloading now", "working on these right now"],
@@ -1731,8 +1728,8 @@ function renderJobs(st){
     } else if(j.status === "queued" || j.status === "resolving"){
       acts = `<button class="btn ghost sm" data-cancel="${esc(j.id)}">Cancel</button>`;
     } else if(j.status === "done"){
-      acts = (empty ? "" : `<button class="btn ghost sm ico" data-open="${esc(j.id)}"
-                 title="Open folder" aria-label="Open folder">${FOLDER_ICON}</button>`
+      acts = (empty ? "" : `<button class="btn ghost sm" data-openlib="${esc(j.id)}"
+                 title="Show this download in your library">Library</button>`
                         + `<button class="btn ghost sm" data-read="${esc(j.id)}">Read</button>`);
     } else if(j.status === "paused"){
       // Nothing failed here: the disk ran out. Resuming is not a retry, so it
@@ -2012,15 +2009,10 @@ document.addEventListener("click", async (e)=>{
     }catch(err){ toast(err.message); cb.disabled = false; }
     return;
   }
-  const ob = e.target.closest("[data-open]");
+  // A finished job points at its library entry, not at a file manager.
+  const ob = e.target.closest("[data-openlib]");
   if(ob){
-    try{
-      const r = await api("/api/open-folder", {
-        method:"POST", headers:{"Content-Type":"application/json"},
-        body: JSON.stringify({id: ob.dataset.open})
-      });
-      if(!r.opened) toast("Folder: " + r.path);
-    }catch(err){ toast(err.message); }
+    gotoLibrary(ob.dataset.openlib);
     return;
   }
   const rb = e.target.closest("[data-retry]");
@@ -2483,15 +2475,21 @@ function gotoLibrary(job, file){
   setTab("library");
   let tries = 0;
   const t = setInterval(()=>{
-    const el = [...document.querySelectorAll("#libList .rfile")]
-      .find(x => x.dataset.job === job && x.dataset.name === file);
+    const rows = [...document.querySelectorAll("#libList .rfile")];
+    const el = rows.find(x => x.dataset.job === job && (!file || x.dataset.name === file));
     if(el){
       el.scrollIntoView({block:"center", behavior:"smooth"});
       el.classList.add("flash");
       setTimeout(()=>el.classList.remove("flash"), 1800);
       clearInterval(t);
+      return;
     }
-    if(++tries > 25) clearInterval(t);   // library may still be loading
+    if(++tries > 25){                      // library may still be loading
+      clearInterval(t);
+      // Saying nothing leaves you staring at a list that does not have it.
+      if(!rows.length) toast("Nothing in the library yet");
+      else toast("That download is not in the library");
+    }
   }, 200);
 }
 

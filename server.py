@@ -333,7 +333,7 @@ def clear_caches():
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "HardlyReading/2.9.1"
+    server_version = "HardlyReading/2.9.2"
 
     def log_message(self, fmt, *args):
         pass  # quiet
@@ -1184,14 +1184,6 @@ class Handler(BaseHTTPRequestHandler):
                 return self._send(200, {"job": ENGINE.confirm(jid)})
             except Exception as e:  # noqa: BLE001
                 return self._send(400, {"error": str(e)})
-
-        if path == "/api/open-folder":
-            import engine as _e
-            jid = body.get("id") or ""
-            j = ENGINE.get(jid)
-            target = (j.dir if j and j.dir else ENGINE.settings["download_dir"])
-            ok = _e.open_folder(target)
-            return self._send(200, {"opened": ok, "path": target})
 
         if path == "/api/clear-cache":
             freed, removed = clear_caches()
