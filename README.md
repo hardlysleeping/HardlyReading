@@ -142,7 +142,8 @@ with no file) and **Download** (just that issue). Tick one and press **↓ all
 below** to take that issue and everything after it, or **↑ all above** for the
 run before it — ranges add up, so two runs are two clicks. **Download N
 selected** queues exactly the ticked issues, each as its own job. Long
-collections load 200 at a time, oldest or newest first.
+collections page through 10 issues at a time (10 / 50 / 100 per page, with
+`‹`/`›` right there in the pane), oldest or newest first.
 
 The card then reads `the newest 25 of 312`, and everything outside that count is
 reported as over the limit, not as a duplicate you already had.

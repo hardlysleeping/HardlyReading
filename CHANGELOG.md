@@ -3,6 +3,18 @@
 Notable changes to HardlyReading. Versions are tagged on GitHub with matching
 release notes.
 
+## [2.11.1] — 2026-10-24
+
+### Changed
+
+- The issue list in the search pane pages instead of growing: **10 issues at a
+  time** by default, with a `10 / 50 / 100` per-page picker and `‹` / `›` to
+  walk the collection without leaving the pane. The footer says exactly where
+  you are (`11–20 of 835 · page 2/84`), and each page is one small
+  `/api/collection` window rather than 200 rows fetched up front.
+- Ticks are kept across pages, so a run picked on page 2 survives a look at
+  page 3; **↑ all above** / **↓ all below** act on the page in view.
+
 ## [2.11.0] — 2026-10-24
 
 ### Added

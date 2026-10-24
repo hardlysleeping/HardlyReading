@@ -418,6 +418,10 @@
   .detail .dsrc{display:inline-block;margin-top:13px;font-size:11.5px;
     color:var(--dimmer);text-decoration:none;border-bottom:1px dotted var(--line)}
   .detail .dsrc:hover{color:var(--text)}
+  /* A collection is a list of issues: the cover and blurb shrink so the list,
+     its pager and its buttons all fit on one screen. */
+  .detail.collview .dcover{max-height:104px}
+  .detail.collview .ddesc{max-height:5.4em;overflow:hidden}
   /* The issues of a collection, listed inside the pane. Two lines per row:
      title first, actions under it, because the pane is 330-390 px wide. */
   .dpick{margin-top:15px;border-top:1px solid var(--line);padding-top:13px}
@@ -428,8 +432,10 @@
   .dpickhead select{height:26px;font-size:11.5px;padding:1px 6px;border-radius:7px}
   .dpickbar{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:9px}
   .dpickbar .btn.sm{height:26px;font-size:11.5px;padding:0 8px}
-  .dpicklist{display:flex;flex-direction:column;gap:1px;max-height:44vh;
-    overflow:auto;overscroll-behavior:contain}
+  /* Sized so the block's own controls (range buttons, pager, Download) fit
+     under the pane's sticky header instead of scrolling behind it. */
+  .dpicklist{display:flex;flex-direction:column;gap:1px;
+    max-height:calc(100vh - 334px);overflow:auto;overscroll-behavior:contain}
   .dpick .collrow{display:grid;grid-template-columns:17px minmax(0,1fr);
     gap:5px 8px;align-items:start;padding:7px 6px;border-radius:8px}
   .dpick .collmain b{font-size:12.5px}
@@ -437,7 +443,11 @@
   .dpick .collacts{grid-column:2;display:flex;gap:5px;flex-wrap:wrap;margin-top:1px}
   .dpick .collacts .btn.sm{height:24px;font-size:11px;padding:0 7px;min-width:0}
   .dpick .collrow input[type=checkbox]{grid-row:1;margin-top:2px}
-  .dpickmore{display:flex;margin:10px auto 2px}
+  .dpickpage{display:flex;align-items:center;gap:6px;margin:9px 0 0}
+  .dpickpage .dnote{flex:1 1 auto;text-align:center;font-size:11px;
+    font-variant-numeric:tabular-nums;white-space:nowrap}
+  .dpickpage .btn.sm{height:26px;padding:0 9px;font-size:13px;line-height:1}
+  .dpickpage select{height:26px;font-size:11px;padding:0 4px;border-radius:7px}
   .dpick .dpickfoot{display:flex;gap:6px;margin-top:10px}
   .dpick .dpickfoot .btn{flex:1 1 auto;height:32px;font-size:12px}
   .dnote{font-size:11.5px;color:var(--dim);line-height:1.5}
@@ -2635,6 +2645,7 @@ function paintDetail(d, prevDesc){
       ${isColl ? `<div class="dpick" id="dpick"></div>` : ""}
     </div>`;
   det.hidden = false;
+  det.classList.toggle("collview", isColl);
   $("stage").classList.add("split");
   document.body.classList.add("detail-open");
   const close = $("dclose");
@@ -2645,7 +2656,7 @@ function paintDetail(d, prevDesc){
     if(paneColl.id !== d.identifier) paneCollReset(d.identifier);
     panePaint();
     if(!paneColl.items.length && !paneColl.err && !paneColl.loading)
-      paneCollLoad(false);
+      paneCollLoad();
   }
   if(!prevDesc) loadDetailDesc(d);
 }
@@ -2784,28 +2795,37 @@ function gotoLibrary(job, file){
 // because refreshDetail() repaints on every covered-status change: rebuilding
 // the list from scratch each time would drop the ticks and the order choice.
 const paneColl = {id:"", items:[], total:0, order:"oldest", loading:false,
-                  sel:new Set(), anchor:"", err:"", rows:200};
+                  sel:new Set(), anchor:"", err:"", page:0, rows:10};
+const PANE_ROWS = [10, 50, 100];        // one page of the list at a time
 
 function paneCollReset(id){
   paneColl.id = id || "";
   paneColl.items = []; paneColl.total = 0; paneColl.order = "oldest";
   paneColl.loading = false; paneColl.sel = new Set(); paneColl.anchor = "";
-  paneColl.err = "";
+  paneColl.err = ""; paneColl.page = 0;
+  if(PANE_ROWS.indexOf(paneColl.rows) < 0) paneColl.rows = 10;
 }
 
-async function paneCollLoad(more){
+// One window of the collection per page: the pane asks for `rows` issues from
+// `page * rows`, so a 900-issue run is 90 small requests rather than a list of
+// 900 rows nobody scrolls through.
+async function paneCollLoad(){
   const st = paneColl;
   if(!st.id || st.loading) return;
   st.loading = true;
-  if(!more){ st.err = ""; }
-  const want = st.items.length;
+  st.err = "";
+  const wantPage = st.page;
   try{
-    const p = new URLSearchParams({id: st.id, offset: String(want),
+    const p = new URLSearchParams({id: st.id, offset: String(wantPage * st.rows),
       rows: String(st.rows), order: st.order});
     const r = await api("/api/collection?" + p.toString());
     if(paneColl !== st || st.id !== r.identifier) return;   // the pane moved on
     st.total = r.total;
-    st.items = st.items.concat(r.items);
+    // archive.org pages in whole pages; if the offset was refused it answers a
+    // different window, so trust what came back rather than the page we asked for.
+    st.page = Math.floor((r.offset || 0) / st.rows);
+    st.items = r.items || [];
+    st.anchor = "";
   }catch(e){
     st.err = e.message || "could not list them";
   }finally{
@@ -2840,7 +2860,9 @@ function panePaint(){
       : '<div class="dnote">archive.org listed no issues under this collection.</div>';
     return;
   }
-  const left = st.total - st.items.length;
+  const pages = Math.max(1, Math.ceil(st.total / st.rows));
+  const from = st.page * st.rows + 1;
+  const to = Math.min(st.total, from + st.items.length - 1);
   const n = st.sel.size;
   host.innerHTML = `
     <div class="dpickhead">
@@ -2853,14 +2875,22 @@ function panePaint(){
     </div>
     <div class="dpickbar">
       <button class="btn ghost sm" id="dpickAbove"
-              title="Tick the anchor issue and every issue above it">↑ all above</button>
+              title="Tick this issue and the rest of the page above it">↑ all above</button>
       <button class="btn ghost sm" id="dpickBelow"
-              title="Tick the anchor issue and every issue below it">↓ all below</button>
+              title="Tick this issue and the rest of the page below it">↓ all below</button>
       <button class="btn ghost sm" id="dpickNone">Clear</button>
     </div>
-    <div class="dpicklist">${st.items.map(paneRowHtml).join("")}
-      ${left > 0 ? `<button class="btn ghost sm dpickmore" id="dpickMore">Load
-        ${Math.min(left, st.rows).toLocaleString()} more (${left.toLocaleString()} left)</button>` : ""}
+    <div class="dpicklist">${st.items.map(paneRowHtml).join("")}</div>
+    <div class="dpickpage">
+      <button class="btn ghost sm" id="dpickPrev"${st.page > 0 ? "" : " disabled"}
+              title="Previous page">‹</button>
+      <span class="dnote">${from.toLocaleString()}–${to.toLocaleString()} of
+        ${st.total.toLocaleString()} · page ${st.page + 1}/${pages}</span>
+      <button class="btn ghost sm" id="dpickNext"${st.page < pages - 1 ? "" : " disabled"}
+              title="Next page">›</button>
+      <select id="dpickRows" title="Issues per page">
+        ${PANE_ROWS.map(r => `<option value="${r}"${st.rows === r ? " selected" : ""}>${r}</option>`).join("")}
+      </select>
     </div>
     <div class="dpickfoot">
       <button class="btn" id="dpickAdd"${n ? "" : " disabled"}>
@@ -2925,12 +2955,25 @@ function panePaint(){
   const ord = $("dpickOrder");
   if(ord) ord.onchange = ()=>{
     st.order = ord.value === "newest" ? "newest" : "oldest";
-    st.items = []; st.total = 0; st.sel.clear(); st.anchor = "";
+    st.page = 0; st.anchor = "";
     panePaint();
-    paneCollLoad(false);
+    paneCollLoad();
   };
-  const more = $("dpickMore");
-  if(more) more.onclick = ()=> paneCollLoad(true);
+  const prev = $("dpickPrev"), next = $("dpickNext");
+  if(prev) prev.onclick = ()=>{
+    if(st.page <= 0) return;
+    st.page--; panePaint(); paneCollLoad();
+  };
+  if(next) next.onclick = ()=>{
+    if(st.page >= Math.ceil(st.total / st.rows) - 1) return;
+    st.page++; panePaint(); paneCollLoad();
+  };
+  const size = $("dpickRows");
+  if(size) size.onchange = ()=>{
+    st.rows = PANE_ROWS.indexOf(+size.value) >= 0 ? +size.value : 10;
+    st.page = 0; st.anchor = "";
+    panePaint(); paneCollLoad();
+  };
   const add = $("dpickAdd");
   if(add) add.onclick = ()=> paneAddIds([...st.sel], add);
   paneFoot();
