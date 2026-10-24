@@ -3,6 +3,21 @@
 Notable changes to HardlyReading. Versions are tagged on GitHub with matching
 release notes.
 
+## [2.11.0] — 2026-10-24
+
+### Added
+
+- A collection clicked in search now lists its issues **inside the detail pane**
+  instead of only offering a dialog: every issue carries Read (stream, nothing
+  downloaded), Keep (library entry, no file) and Download (just that issue).
+- Taking a range is one click: tick an issue as the anchor, then **↑ all above**
+  or **↓ all below** adds that issue and everything on that side of it. Ranges
+  add up, Clear resets, and **Download N selected** queues exactly the ticked
+  issues — each as its own item job.
+- Long collections page in place (200 at a time, oldest/newest first) with a
+  "Load more" row rather than a dead list, and the issues survive the 1.2 s
+  queue poll: a status change repaints the status, never the ticks.
+
 ## [2.10.2] — 2026-10-22
 
 ### Fixed

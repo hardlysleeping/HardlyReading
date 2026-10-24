@@ -94,8 +94,9 @@ UI never drives a download directly — it only posts intent and reads back stat
   or down; the numbers are the run order, so `#1` really does download next.
 - **Take as many issues as you want** — pick a count (or type one) and whether
   to start from the first issue or the newest, and only those are queued.
-- **Or pick them by hand** — open a collection from Search, tick the issues you
-  actually want, and queue exactly those.
+- **Or pick them by hand** — click a collection in Search and its issues are
+  listed right there in the pane: read one, keep one, download one, or tick a
+  few and **↓ all below** / **↑ all above** to take a run of them.
 - **Stops before it fills the disk** — if the next file will not fit, the job
   pauses and says so instead of leaving a truncated file behind.
 - **Several jobs at once** — 1 to 4, with the file budget shared between them so
@@ -104,7 +105,8 @@ UI never drives a download directly — it only posts intent and reads back stat
 ## Screenshots
 
 Search — click a result and it opens in the pane on the right, results keeping
-their place; **Select** turns ticking on when you want to queue several:
+their place; **Select** turns ticking on when you want to queue several. A
+collection lists its issues in the pane, each with Read / Keep / Download:
 
 ![Search](docs/search.png)
 
@@ -133,6 +135,14 @@ issue, or the newest.
 "The newest 25" means the last 25 in reading order, not whichever 25 archive.org
 happened to list first — and the rest never enter the queue, so a 5,000-item
 collection costs nothing.
+
+Clicking a collection in Search lists its issues in the side pane instead: every
+issue carries **Read** (stream it, nothing downloaded), **Keep** (in the library
+with no file) and **Download** (just that issue). Tick one and press **↓ all
+below** to take that issue and everything after it, or **↑ all above** for the
+run before it — ranges add up, so two runs are two clicks. **Download N
+selected** queues exactly the ticked issues, each as its own job. Long
+collections load 200 at a time, oldest or newest first.
 
 The card then reads `the newest 25 of 312`, and everything outside that count is
 reported as over the limit, not as a duplicate you already had.

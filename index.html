@@ -418,6 +418,29 @@
   .detail .dsrc{display:inline-block;margin-top:13px;font-size:11.5px;
     color:var(--dimmer);text-decoration:none;border-bottom:1px dotted var(--line)}
   .detail .dsrc:hover{color:var(--text)}
+  /* The issues of a collection, listed inside the pane. Two lines per row:
+     title first, actions under it, because the pane is 330-390 px wide. */
+  .dpick{margin-top:15px;border-top:1px solid var(--line);padding-top:13px}
+  .dpickhead{display:flex;align-items:center;justify-content:space-between;gap:8px;
+    margin-bottom:8px}
+  .dpickhead .dnote{font-size:11.5px;color:var(--dim);
+    font-variant-numeric:tabular-nums;white-space:nowrap}
+  .dpickhead select{height:26px;font-size:11.5px;padding:1px 6px;border-radius:7px}
+  .dpickbar{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:9px}
+  .dpickbar .btn.sm{height:26px;font-size:11.5px;padding:0 8px}
+  .dpicklist{display:flex;flex-direction:column;gap:1px;max-height:44vh;
+    overflow:auto;overscroll-behavior:contain}
+  .dpick .collrow{display:grid;grid-template-columns:17px minmax(0,1fr);
+    gap:5px 8px;align-items:start;padding:7px 6px;border-radius:8px}
+  .dpick .collmain b{font-size:12.5px}
+  .dpick .collmain em{font-size:11px}
+  .dpick .collacts{grid-column:2;display:flex;gap:5px;flex-wrap:wrap;margin-top:1px}
+  .dpick .collacts .btn.sm{height:24px;font-size:11px;padding:0 7px;min-width:0}
+  .dpick .collrow input[type=checkbox]{grid-row:1;margin-top:2px}
+  .dpickmore{display:flex;margin:10px auto 2px}
+  .dpick .dpickfoot{display:flex;gap:6px;margin-top:10px}
+  .dpick .dpickfoot .btn{flex:1 1 auto;height:32px;font-size:12px}
+  .dnote{font-size:11.5px;color:var(--dim);line-height:1.5}
   .toast{
     position:fixed;bottom:24px;left:50%;transform:translateX(-50%) translateY(90px);
     background:rgba(26,31,41,.94);border:1px solid var(--line2);border-radius:12px;
@@ -2609,12 +2632,21 @@ function paintDetail(d, prevDesc){
       <div class="dact">${actionsFor(d).join("")}${dl}</div>
       <a class="dsrc" href="https://archive.org/details/${encodeURIComponent(d.identifier)}"
          target="_blank" rel="noopener">Open on archive.org ↗</a>
+      ${isColl ? `<div class="dpick" id="dpick"></div>` : ""}
     </div>`;
   det.hidden = false;
   $("stage").classList.add("split");
   document.body.classList.add("detail-open");
   const close = $("dclose");
   if(close) close.onclick = closeDetail;
+  // A collection is a list of issues: show them here so one can be taken
+  // without opening a dialog on top of the pane.
+  if(isColl && d.identifier && detailId === d.identifier){
+    if(paneColl.id !== d.identifier) paneCollReset(d.identifier);
+    panePaint();
+    if(!paneColl.items.length && !paneColl.err && !paneColl.loading)
+      paneCollLoad(false);
+  }
   if(!prevDesc) loadDetailDesc(d);
 }
 
@@ -2646,6 +2678,7 @@ function showDetail(id){
 
 function closeDetail(){
   detailId = null;
+  paneCollReset("");
   const det = $("detail");
   det.hidden = true;
   det.innerHTML = "";
@@ -2744,6 +2777,240 @@ function gotoLibrary(job, file){
       else toast("That download is not in the library");
     }
   }, 200);
+}
+
+/* ---------- issues inside the detail pane ---------- */
+// The pane's own copy of a collection's members. It lives OUTSIDE the render
+// because refreshDetail() repaints on every covered-status change: rebuilding
+// the list from scratch each time would drop the ticks and the order choice.
+const paneColl = {id:"", items:[], total:0, order:"oldest", loading:false,
+                  sel:new Set(), anchor:"", err:"", rows:200};
+
+function paneCollReset(id){
+  paneColl.id = id || "";
+  paneColl.items = []; paneColl.total = 0; paneColl.order = "oldest";
+  paneColl.loading = false; paneColl.sel = new Set(); paneColl.anchor = "";
+  paneColl.err = "";
+}
+
+async function paneCollLoad(more){
+  const st = paneColl;
+  if(!st.id || st.loading) return;
+  st.loading = true;
+  if(!more){ st.err = ""; }
+  const want = st.items.length;
+  try{
+    const p = new URLSearchParams({id: st.id, offset: String(want),
+      rows: String(st.rows), order: st.order});
+    const r = await api("/api/collection?" + p.toString());
+    if(paneColl !== st || st.id !== r.identifier) return;   // the pane moved on
+    st.total = r.total;
+    st.items = st.items.concat(r.items);
+  }catch(e){
+    st.err = e.message || "could not list them";
+  }finally{
+    st.loading = false;
+    panePaint();
+  }
+}
+
+function paneBits(it){
+  const st = collStatus(it);
+  const kept = shelfIds.has(it.id);
+  return [it.date || it.year,
+          it.size ? fmtBytes(it.size) : "",
+          (st === "done" || kept) ? "in library" : (st ? "in queue" : "")]
+    .filter(Boolean).join(" · ");
+}
+
+// Re-draws the list from paneColl. Ticking one row patches that row instead of
+// calling this, so a click does not rebuild 200 rows under the pointer.
+function panePaint(){
+  const host = $("dpick");
+  if(!host) return;
+  const st = paneColl;
+  if(st.err){
+    host.innerHTML = `<div class="dnote">Could not list this collection —
+      ${esc(st.err)}<br>Use “Browse issues” to try the full list.</div>`;
+    return;
+  }
+  if(!st.items.length){
+    host.innerHTML = st.loading
+      ? '<div class="dnote">Loading issues…</div>'
+      : '<div class="dnote">archive.org listed no issues under this collection.</div>';
+    return;
+  }
+  const left = st.total - st.items.length;
+  const n = st.sel.size;
+  host.innerHTML = `
+    <div class="dpickhead">
+      <span class="dnote">${st.total.toLocaleString()} issue${st.total === 1 ? "" : "s"}
+        — pick any</span>
+      <select id="dpickOrder" title="Issue order">
+        <option value="oldest"${st.order === "oldest" ? " selected" : ""}>oldest first</option>
+        <option value="newest"${st.order === "newest" ? " selected" : ""}>newest first</option>
+      </select>
+    </div>
+    <div class="dpickbar">
+      <button class="btn ghost sm" id="dpickAbove"
+              title="Tick the anchor issue and every issue above it">↑ all above</button>
+      <button class="btn ghost sm" id="dpickBelow"
+              title="Tick the anchor issue and every issue below it">↓ all below</button>
+      <button class="btn ghost sm" id="dpickNone">Clear</button>
+    </div>
+    <div class="dpicklist">${st.items.map(paneRowHtml).join("")}
+      ${left > 0 ? `<button class="btn ghost sm dpickmore" id="dpickMore">Load
+        ${Math.min(left, st.rows).toLocaleString()} more (${left.toLocaleString()} left)</button>` : ""}
+    </div>
+    <div class="dpickfoot">
+      <button class="btn" id="dpickAdd"${n ? "" : " disabled"}>
+        ${n ? `Download ${n} selected` : "Download selected"}</button>
+    </div>`;
+
+  host.querySelectorAll(".collrow").forEach(row=>{
+    row.onclick = (e)=>{
+      if(e.target.closest("button")) return;
+      if(selecting()) return;
+      const id = row.dataset.id;
+      if(st.sel.has(id)) st.sel.delete(id); else st.sel.add(id);
+      st.anchor = id;
+      row.classList.toggle("on", st.sel.has(id));
+      const box = row.querySelector("input");
+      if(box) box.checked = st.sel.has(id);
+      paneFoot();
+    };
+  });
+  host.querySelectorAll("[data-padd]").forEach(b=>{
+    b.onclick = (e)=>{ e.stopPropagation(); paneAddIds([b.dataset.padd], b); };
+  });
+  host.querySelectorAll("[data-pread]").forEach(b=>{
+    b.onclick = async (e)=>{
+      e.stopPropagation();
+      b.disabled = true;
+      try{
+        await openStream({job:"", name: b.dataset.name,
+                          ident: b.dataset.pread, key:""});
+      }catch(err){ toast(err.message); }
+      b.disabled = false;
+    };
+  });
+  host.querySelectorAll("[data-pkeep], [data-punkeep]").forEach(b=>{
+    b.onclick = async (e)=>{
+      e.stopPropagation();
+      const keeping = Boolean(b.dataset.pkeep);
+      const id = b.dataset.pkeep || b.dataset.punkeep;
+      b.disabled = true;
+      try{
+        const r = await api(keeping ? "/api/shelf" : "/api/unshelf", {
+          method:"POST", headers:{"Content-Type":"application/json"},
+          body: JSON.stringify(keeping
+            ? {ident: id, name: b.dataset.name || ""} : {ident: id})});
+        shelfIds = new Set(r.shelf || []);
+        toast(keeping ? "Kept in your library" : "Removed from your library");
+        panePaint();
+      }catch(err){ toast(err.message); b.disabled = false; }
+    };
+  });
+  const above = $("dpickAbove"), below = $("dpickBelow"), none = $("dpickNone");
+  if(above) above.onclick = ()=> paneRange("above");
+  if(below) below.onclick = ()=> paneRange("below");
+  if(none) none.onclick = ()=>{
+    st.sel.clear();
+    host.querySelectorAll(".collrow").forEach(r=>{
+      r.classList.remove("on");
+      const box = r.querySelector("input"); if(box) box.checked = false;
+    });
+    paneFoot();
+  };
+  const ord = $("dpickOrder");
+  if(ord) ord.onchange = ()=>{
+    st.order = ord.value === "newest" ? "newest" : "oldest";
+    st.items = []; st.total = 0; st.sel.clear(); st.anchor = "";
+    panePaint();
+    paneCollLoad(false);
+  };
+  const more = $("dpickMore");
+  if(more) more.onclick = ()=> paneCollLoad(true);
+  const add = $("dpickAdd");
+  if(add) add.onclick = ()=> paneAddIds([...st.sel], add);
+  paneFoot();
+}
+
+function paneRowHtml(it){
+  const st = collStatus(it);
+  const kept = shelfIds.has(it.id);
+  const on = paneColl.sel.has(it.id);
+  const name = it.title || it.id;
+  return `<div class="collrow${on ? " on" : ""}" data-id="${esc(it.id)}">
+    <input type="checkbox" ${on ? "checked" : ""} aria-label="Select ${esc(name)}">
+    <span class="collmain"><b>${esc(name)}</b><em>${esc(paneBits(it))}</em></span>
+    <span class="collacts">
+      <button class="btn ghost sm" data-pread="${esc(it.id)}" data-name="${esc(name)}"
+              title="Read it now — nothing is downloaded">Read</button>
+      ${kept
+        ? `<button class="btn ghost sm" data-punkeep="${esc(it.id)}"
+             title="Remove this issue from your library">Kept ✓</button>`
+        : `<button class="btn ghost sm" data-pkeep="${esc(it.id)}" data-name="${esc(name)}"
+             title="Keep it in your library without downloading it">Keep</button>`}
+      <button class="btn ghost sm" data-padd="${esc(it.id)}"${st ? " disabled" : ""}
+              title="Download just this issue">${st ? "Queued" : "Download"}</button>
+    </span>
+  </div>`;
+}
+
+// The count on the footer button, without rebuilding the rows.
+function paneFoot(){
+  const add = $("dpickAdd");
+  if(!add) return;
+  const n = paneColl.sel.size;
+  add.textContent = n ? `Download ${n} selected` : "Download selected";
+  add.disabled = n === 0;
+}
+
+// "Pick one, then take everything below it" — the range is anchored on the last
+// row clicked and ADDS to what is already ticked, so two ranges can be combined.
+function paneRange(dir){
+  const st = paneColl;
+  if(!st.items.length) return;
+  const at = st.items.findIndex(x => x.id === st.anchor);
+  if(at < 0){ toast("Tick an issue first — then all above/below counts from it"); return; }
+  const slice = dir === "above" ? st.items.slice(0, at + 1) : st.items.slice(at);
+  slice.forEach(x => st.sel.add(x.id));
+  const host = $("dpick");
+  if(host) host.querySelectorAll(".collrow").forEach(row=>{
+    const on = st.sel.has(row.dataset.id);
+    row.classList.toggle("on", on);
+    const box = row.querySelector("input"); if(box) box.checked = on;
+  });
+  paneFoot();
+}
+
+async function paneAddIds(ids, btn){
+  if(!ids.length) return;
+  const label = btn ? btn.textContent : "";
+  if(btn){ btn.disabled = true; btn.textContent = "Adding…"; }
+  try{
+    const r = await api("/api/add-many", {
+      method:"POST", headers:{"Content-Type":"application/json"},
+      body: JSON.stringify({ids, category: catForAdd()})});
+    const bits = [];
+    if(r.added.length) bits.push(`queued ${r.added.length}`);
+    if(r.skipped.length) bits.push(`${r.skipped.length} already queued`);
+    if(r.invalid && r.invalid.length) bits.push(`${r.invalid.length} not a valid id`);
+    toast(bits.join(" · ") || "Nothing added");
+    for(const a of (r.added || [])){
+      const ident = a.identifier || a.label;
+      const it = paneColl.items.find(x => x.id === ident);
+      if(it) it.have = a.status || "queued";
+    }
+    paneColl.sel.clear();
+    await refreshCovered();
+    panePaint();
+    tick();
+  }catch(e){
+    toast("Could not add: " + e.message);
+    if(btn){ btn.disabled = false; btn.textContent = label; }
+  }
 }
 
 /* ---------- collection browser ---------- */
