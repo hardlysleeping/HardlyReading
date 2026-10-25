@@ -147,7 +147,7 @@ def http_json(url: str, timeout: int = 60):
     """GET a URL and return parsed JSON. No retry here — callers that can
     recover (the resolver, the per-item probe) do their own attempts."""
 
-    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/2.11.1"})
+    req = urllib.request.Request(url, headers={"User-Agent": "HardlyReading/2.12.0"})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.load(r)
 
@@ -856,6 +856,10 @@ class Engine:
             "komga_naming": True,
             # Skip anything whose checksum already exists in the destination.
             "skip_existing": True,
+            # Komga makes ONE SERIES PER FOLDER, so an archive.org dump that
+            # unpacks as <Series>/<issue>/<issue>.cbz shows up as a series per
+            # issue. On: collapse those nested folders after each download.
+            "autoflatten": True,
             # Show the "reader" label in the reader header.
             "show_brand": True,
             # Installed as a user service when switched on; off unless asked.
@@ -1635,6 +1639,106 @@ WantedBy=default.target
                 out.append({"series": series, "name": fn, "size": size})
         return out
 
+    # ---------------------------------------------------------- flattening
+    def flatten_series(self, series_dir: str) -> dict:
+        """Collapse per-issue subfolders into the series folder itself.
+
+        Komga creates ONE SERIES PER FOLDER, so an item that unpacks as
+        `<Series>/<issue>/<issue>.cbz` shows up as 140 separate series instead
+        of one series with 140 issues. This hoists the one real book out of
+        each nested folder into the series folder and parks everything else
+        (OCR text, the extra PDF, `.aria2` stubs, whatever else the dump
+        carried) under `<download root>/.flattened/<series>/`.
+
+        The dot prefix is the whole trick: `scan_folder()` skips dot
+        directories and Komga ignores dot files, so the parked pile is out of
+        both libraries without being deleted. NOTHING here is ever removed —
+        an unrecognised file is moved, not dropped.
+        """
+        result = {"series": os.path.basename(series_dir or ""),
+                  "folders": 0, "moved": 0, "kept": 0, "bytes": 0,
+                  "parked_in": ""}
+        if not series_dir or not os.path.isdir(series_dir):
+            return result
+        root = self.download_root()
+        park = os.path.join(root, FLATTEN_DIR, os.path.basename(series_dir))
+        target = ""
+        for name in sorted(os.listdir(series_dir)):
+            sub = os.path.join(series_dir, name)
+            if name.startswith(".") or not os.path.isdir(sub):
+                continue
+            books = []
+            for dirpath, dirnames, filenames in os.walk(sub):
+                dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+                for fn in filenames:
+                    if fn.startswith("."):
+                        continue
+                    if fn.lower().endswith(BOOK_EXTS):
+                        books.append(os.path.join(dirpath, fn))
+            result["folders"] += 1
+            target = ""
+            pick = preferred_book(books)
+            if pick:
+                stem, ext = os.path.splitext(os.path.basename(pick))
+                if stem.lower().endswith("_jp2"):
+                    stem = stem[:-4]
+                target = os.path.join(series_dir, safe_name(stem + ext.lower()))
+                # Same name already there? Keep both only if they differ.
+                n = 2
+                while os.path.exists(target):
+                    dup = (os.path.getsize(target) == os.path.getsize(pick))
+                    if dup:
+                        target = ""
+                        break
+                    target = os.path.join(
+                        series_dir, safe_name(f"{stem} ({n}){ext.lower()}"))
+                    n += 1
+                if target:
+                    try:
+                        move_file(pick, target)
+                        result["moved"] += 1
+                        try:
+                            result["bytes"] += os.path.getsize(target)
+                        except OSError:
+                            pass
+                    except OSError:
+                        target = ""
+            # Park the leftovers, whole folder, out of both libraries.
+            dest = os.path.join(park, name)
+            n = 2
+            while os.path.exists(dest):
+                dest = os.path.join(park, f"{name} ({n})")
+                n += 1
+            try:
+                os.makedirs(os.path.dirname(dest), exist_ok=True)
+                shutil.move(sub, dest)
+            except (OSError, shutil.Error):
+                continue
+            if not target:
+                result["kept"] += 1
+            result["parked_in"] = park
+        return result
+
+    def flatten_library(self) -> dict:
+        """Run flatten_series() over every series folder in the download root."""
+        root = self.download_root()
+        totals = {"series": 0, "folders": 0, "moved": 0, "kept": 0,
+                  "bytes": 0, "parked_in": os.path.join(root, FLATTEN_DIR)}
+        if not os.path.isdir(root):
+            return totals
+        for name in sorted(os.listdir(root)):
+            sub = os.path.join(root, name)
+            if name.startswith(".") or not os.path.isdir(sub):
+                continue
+            r = self.flatten_series(sub)
+            if not r["folders"]:
+                continue
+            totals["series"] += 1
+            for k in ("folders", "moved", "kept", "bytes"):
+                totals[k] += r[k]
+        return totals
+
+
     def covered(self):
         """Map archive identifier -> queue state, for the search grid.
 
@@ -2038,6 +2142,15 @@ WantedBy=default.target
             job.message = (f"retrying in {human_eta(delay)} "
                            f"(attempt {job.retries + 1}) · {note}")
         self.save_state()
+
+        # Komga-friendly tidying, after the download is genuinely finished. A
+        # dump that unpacks into per-issue folders otherwise becomes one Komga
+        # series per issue. Never let tidying fail a good download.
+        if verdict in ("ok", "tail") and self.settings.get("autoflatten", True):
+            try:
+                self.flatten_series(dest)
+            except Exception:  # noqa: BLE001
+                pass
 
     @staticmethod
     def _drop_aria(dest):
@@ -2689,6 +2802,31 @@ def _most_common(values):
 # PDF pages server-side needs a whole PDF engine — far too heavy for a preview.
 
 IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".gif", ".webp", ".bmp")
+# Formats Komga reads as a book. Order matters in flatten_series(): a real
+# comic archive beats a PDF, and an OCR'd `_text.pdf` is the LAST choice.
+BOOK_EXTS = (".cbz", ".cbr", ".cbt", ".zip", ".pdf")
+# Leftover folders from a flattened dump are parked here, under the download
+# root. Dot-prefixed on purpose: scan_folder() and Komga both skip dot dirs.
+FLATTEN_DIR = ".flattened"
+
+
+def preferred_book(paths):
+    """Which file in a dump folder is the issue itself.
+
+    Archive.org dumps usually carry both a page-image archive and one or two
+    PDFs (the raw scan, plus an OCR'd `_text.pdf`). The page images are the
+    real comic, so ordering is: comic archive (jp2/flat) → PDF (not `_text`)
+    → anything else. Returns None for no books.
+    """
+    def rank(p):
+        low = os.path.basename(p).lower()
+        stem, ext = os.path.splitext(low)
+        if ext in (".cbz", ".cbr", ".cbt", ".zip"):
+            return (0, 0 if "jp2" in stem else 1)
+        if ext == ".pdf":
+            return (1, 1 if stem.endswith("_text") else 0)
+        return (2, 0)
+    return sorted(paths, key=lambda p: (rank(p), p))[0] if paths else None
 
 
 def book_key(entry, job=None) -> str:

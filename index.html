@@ -1021,6 +1021,17 @@
           <span><b>Komga folder naming</b>
             <em>One folder per series, <code>Series 001 (1976).cbz</code></em></span>
         </label>
+        <label class="rowchk">
+          <input type="checkbox" id="set_autoflatten">
+          <span><b>Flatten nested folders</b>
+            <em>Komga makes one series per folder: a dump unpacked into
+            per-issue folders is collapsed after each download. Leftovers are
+            moved to <code>.flattened</code>, never deleted.</em></span>
+        </label>
+        <div class="row" style="margin:2px 0 6px;gap:8px">
+          <button class="btn ghost sm" id="flattenNow">Flatten library now</button>
+          <span class="hint" id="flattenHint" style="margin:0"></span>
+        </div>
 
         <label class="rowfield">
           <span>Download folder</span>
@@ -4367,6 +4378,7 @@ const SETTING_FIELDS = {
   review_before_download:{id:"set_preview",   type:"bool",  def:false},
   skip_existing:   {id:"set_skip_existing",   type:"bool",  def:true},
   komga_naming:    {id:"set_komga_naming",    type:"bool",  def:true},
+  autoflatten:     {id:"set_autoflatten",     type:"bool",  def:true},
   download_dir:    {id:"set_download_dir",    type:"str",   def:""},
   jobs_in_flight:  {id:"set_jobs_in_flight",  type:"int",   def:12, min:1, max:64},
   between_jobs:    {id:"set_between_jobs",    type:"int",   def:30, min:0, max:600},
@@ -4532,6 +4544,29 @@ async function clearCacheNow(){
     btn.textContent = "Clear";
   }
 }
+/* One series per folder is what Komga wants; a dump that unpacks into
+   per-issue folders otherwise shows up as a series per issue. Moves files
+   into place and parks the leftovers under .flattened — deletes nothing. */
+async function flattenNow(){
+  const btn = $("flattenNow"), hint = $("flattenHint");
+  if(!btn) return;
+  btn.disabled = true; btn.textContent = "Flattening…";
+  if(hint) hint.textContent = "";
+  try{
+    const r = await api("/api/flatten", {method:"POST", body: JSON.stringify({})});
+    const moved = r.moved || 0, folders = r.folders || 0, series = r.series || 0;
+    const msg = folders
+      ? `Folded ${folders} folder${folders===1?"":"s"} into ${series} series · ${moved} file${moved===1?"":"s"} moved`
+      : "Nothing nested to flatten";
+    if(hint) hint.textContent = msg; else toast(msg);
+    toast(msg);
+  }catch(e){
+    if(hint) hint.textContent = "Could not flatten: " + e.message;
+    toast("Could not flatten: " + e.message);
+  }finally{
+    btn.disabled = false; btn.textContent = "Flatten library now";
+  }
+}
 function closeSettings(){ $("settingsModal").hidden = true; }
 
 $("gearBtn").onclick = openSettings;
@@ -4575,6 +4610,7 @@ $("clearHistory").onclick = async ()=>{
 };
 $("settingsClose").onclick = closeSettings;
 $("clearCache").onclick = clearCacheNow;
+$("flattenNow").onclick = flattenNow;
 $("settingsDone").onclick = closeSettings;
 $("settingsModal").addEventListener("click", (e)=>{
   if(e.target === $("settingsModal")) closeSettings();

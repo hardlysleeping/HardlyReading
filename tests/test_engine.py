@@ -805,5 +805,88 @@ class ShelfTest(unittest.TestCase):
                          engine.book_key({"identifier": "mad_4", "desc": "blurb"}))
 
 
+
+class FlattenTest(unittest.TestCase):
+    """A dump unpacked into per-issue folders must collapse into one series."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp(prefix="hr-flat-")
+        # download_root() prefers IA_DOWNLOAD_DIR (set for the whole suite), so
+        # the parked pile lands there unless this test moves it too.
+        self._env = os.environ.get("IA_DOWNLOAD_DIR")
+        os.environ["IA_DOWNLOAD_DIR"] = self.tmp
+        self.e = fresh_engine()
+        self.e.settings["download_dir"] = self.tmp
+        self.series = os.path.join(self.tmp, "Sick Magazine")
+        os.makedirs(self.series)
+
+    def tearDown(self):
+        if self._env is None:
+            os.environ.pop("IA_DOWNLOAD_DIR", None)
+        else:
+            os.environ["IA_DOWNLOAD_DIR"] = self._env
+        shutil.rmtree(self.tmp, ignore_errors=True)
+
+    def _issue(self, name, main=None, extra=True):
+        main = main or f"{name}_jp2.cbz"
+        d = os.path.join(self.series, name)
+        os.makedirs(d)
+        with open(os.path.join(d, main), "wb") as fh:
+            fh.write(b"PK\x03\x04" + name.encode())
+        if extra:
+            open(os.path.join(d, name + "_djvu.txt"), "w").write("ocr")
+            with open(os.path.join(d, name + "_text.pdf"), "wb") as fh:
+                fh.write(b"%PDF-1.4 text")
+        return d
+
+    def test_nested_issues_become_one_folder(self):
+        self._issue("sick01aug60")
+        self._issue("sick02")
+        r = self.e.flatten_series(self.series)
+        self.assertEqual(r["folders"], 2)
+        self.assertEqual(r["moved"], 2)
+        files = sorted(os.listdir(self.series))
+        self.assertEqual(files, ["sick01aug60.cbz", "sick02.cbz"])
+        self.assertFalse([n for n in files if os.path.isdir(
+            os.path.join(self.series, n))])
+
+    def test_leftovers_are_moved_not_deleted(self):
+        self._issue("sick03")
+        self.e.flatten_series(self.series)
+        park = os.path.join(self.tmp, engine.FLATTEN_DIR, "Sick Magazine", "sick03")
+        self.assertTrue(os.path.isfile(os.path.join(park, "sick03_text.pdf")))
+        self.assertTrue(os.path.isfile(os.path.join(park, "sick03_djvu.txt")))
+
+    def test_parked_folder_is_invisible_to_the_library_scan(self):
+        self._issue("sick04")
+        self.e.flatten_series(self.series)
+        names = [x["name"] for x in self.e.scan_folder()]
+        self.assertIn("sick04.cbz", names)
+        self.assertNotIn("sick04_text.pdf", names)
+
+    def test_pdf_is_taken_when_there_is_no_archive(self):
+        self._issue("sick05", main="sick05.pdf", extra=False)
+        r = self.e.flatten_series(self.series)
+        self.assertEqual(r["moved"], 1)
+        self.assertEqual(os.listdir(self.series), ["sick05.pdf"])
+
+    def test_a_flat_series_is_left_alone(self):
+        open(os.path.join(self.series, "sick06.cbz"), "wb").write(b"PK\x03\x04")
+        r = self.e.flatten_series(self.series)
+        self.assertEqual((r["folders"], r["moved"]), (0, 0))
+        self.assertEqual(os.listdir(self.series), ["sick06.cbz"])
+
+    def test_library_flatten_walks_every_series(self):
+        other = os.path.join(self.tmp, "Cracked Magazine")
+        os.makedirs(other)
+        for series, issue in ((self.series, "a"), (other, "b")):
+            d = os.path.join(series, issue)
+            os.makedirs(d)
+            open(os.path.join(d, issue + ".cbz"), "wb").write(b"PK\x03\x04" + issue.encode())
+        t = self.e.flatten_library()
+        self.assertEqual(t["series"], 2)
+        self.assertEqual(t["moved"], 2)
+
+
 if __name__ == "__main__":
     unittest.main(verbosity=2)

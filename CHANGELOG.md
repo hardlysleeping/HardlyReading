@@ -3,6 +3,22 @@
 Notable changes to HardlyReading. Versions are tagged on GitHub with matching
 release notes.
 
+## [2.12.0] — 2026-10-24
+
+### Added
+
+- **Flatten nested folders.** Komga makes one series per folder, so an
+  archive.org dump that unpacks as `<Series>/<issue>/<issue>.cbz` shows up as a
+  series per issue instead of one series with all of them. With *Flatten nested
+  folders* on (the default) each finished download is collapsed: the real book
+  — page images before a PDF, and never the OCR'd `_text.pdf` — is hoisted into
+  the series folder, and the rest of the folder (OCR text, the duplicate PDF,
+  `.aria2` stubs) is **moved**, never deleted, to
+  `<download folder>/.flattened/<series>/`, which Komga and the library scan
+  both ignore.
+- **Flatten library now** in Settings tidies the folders that are already
+  there, and reports how many folders were folded into how many series.
+
 ## [2.11.1] — 2026-10-24
 
 ### Changed

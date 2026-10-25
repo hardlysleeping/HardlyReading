@@ -333,7 +333,7 @@ def clear_caches():
 
 
 class Handler(BaseHTTPRequestHandler):
-    server_version = "HardlyReading/2.11.1"
+    server_version = "HardlyReading/2.12.0"
 
     def log_message(self, fmt, *args):
         pass  # quiet
@@ -1198,6 +1198,17 @@ class Handler(BaseHTTPRequestHandler):
         if path == "/api/clear-cache":
             freed, removed = clear_caches()
             return self._send(200, {"freed": freed, "files": removed})
+
+        if path == "/api/flatten":
+            # Optional {series: "folder name"} for one series; no argument
+            # tidies the whole download folder. Moves files, deletes nothing.
+            series = (body or {}).get("series") or ""
+            if series:
+                target = ENGINE.folder_path(series)
+                if not target:
+                    return self._send(404, {"error": "no such folder"})
+                return self._send(200, ENGINE.flatten_series(target))
+            return self._send(200, ENGINE.flatten_library())
 
         if path == "/api/settings":
             with ENGINE.lock:
