@@ -767,11 +767,34 @@
   .eye3:hover{color:var(--text)}
   .eye3.s1{color:#f0b429}
   .eye3.s2{color:var(--accent2);border-color:var(--accent2)}
+  /* The strip toggle is a phone control. Desktop grid mode is deliberately left
+     exactly as it was, so the button is not even in the desktop toolbar. */
+  .eye3#libStrip{display:none}
+  @media (max-width:640px){ .eye3#libStrip{display:grid} }
   .rfile.hidden,.gcard.hidden{opacity:.55}
   .rfile.hidden{background-image:linear-gradient(90deg,rgba(240,180,41,.10),transparent 55%)}
   /* Grid: posters, four to eight per row depending on the window. */
   .libgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(140px,1fr));
     gap:16px;margin-top:14px}
+  /* The cover's scroll window. `display:contents` means this wrapper does not
+     exist in the normal grid at all — the picture stays the grid's own box — and
+     only strip mode turns it into a pane. */
+  .gstrip{display:contents}
+  /* Strip mode, phones only. One card per row at twice the width, and the cover
+     stops being a 3:4 crop: a wide comic page is drawn twice the card's width in
+     a horizontal window, so half of it is on screen and the rest arrives by
+     swiping sideways INSIDE the card. Vertical page scroll is untouched because
+     the window takes the horizontal axis only (touch-action on the pane). */
+  @media (max-width:640px){
+    .libgrid.strips{grid-template-columns:1fr;gap:14px}
+    .libgrid.strips .gcover{aspect-ratio:auto;height:min(58vh,420px)}
+    .libgrid.strips .gstrip{display:block;width:100%;height:100%;overflow-x:auto;
+      overflow-y:hidden;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain;
+      touch-action:pan-x;scroll-snap-type:x proximity}
+    .libgrid.strips .gstrip .gcov{width:200%;height:100%;max-width:none;
+      object-fit:cover;object-position:left center;scroll-snap-align:start}
+    .libgrid.strips .gstrip .gcov.none{width:100%}
+  }
   .gcard{cursor:pointer}
   .gcover{position:relative;border-radius:10px;overflow:hidden;
     border:1px solid var(--line);background:var(--panel2);aspect-ratio:3/4;
@@ -1264,6 +1287,8 @@ Support the Archive</a>
             <button data-view="list" class="on" title="List view">☰</button>
             <button data-view="grid" title="Grid view">▦</button>
           </div>
+          <button class="eye3" id="libStrip" aria-label="Wide cards"
+            aria-pressed="false" title="Wide cards — one per row, swipe a cover sideways">⇔</button>
           <button class="btn ghost sm" id="libSelBtn">Select</button>
         </div>
       </div>
@@ -3412,6 +3437,9 @@ const libSelected = new Set();   // keys of rows ticked in select mode
 let libRows = [];   // the filtered list the pager counts
 
 let libView = localStorage.getItem("hr.libView") === "grid" ? "grid" : "list";
+/* Strip mode: the phone's wide-card grid. Off by default, kept across reloads,
+   and only ever consulted while the grid is the view. */
+let libStrip = localStorage.getItem("hr.libStrip") === "1";
 let libChip = localStorage.getItem("hr.libChip") || "all";
 
 function matchesChip(i, chip){
@@ -3532,7 +3560,9 @@ function renderLibrary(){
 
   if(libView === "grid"){
     // A grid is for browsing by cover; series headers would only interrupt it.
-    $("libList").innerHTML = `<div class="libgrid">${slice.map(gridCard).join("")}</div>`;
+    // Strip mode is the phone's second way to browse: one card per row, twice
+    // the size, and each cover a horizontal window you swipe through.
+    $("libList").innerHTML = `<div class="libgrid${libStrip ? " strips" : ""}">${slice.map(gridCard).join("")}</div>`;
   } else {
     $("libList").innerHTML = Object.keys(groups).sort().map(se => `
       <div class="libgroup">${esc(se)}</div>
@@ -3682,7 +3712,7 @@ function gridCard(it){
              onerror="this.replaceWith(Object.assign(document.createElement('span'),{className:'gcov none',textContent:'no cover'}))">`
     : `<span class="gcov none">${it.kind === "pdf" ? "PDF" : "not downloaded"}</span>`;
   return `<div class="gcard${it.finished?" done":""}" data-key="${esc(it.key)}">
-    <div class="gcover">${cover}${starBtn(it)}
+    <div class="gcover"><div class="gstrip">${cover}</div>${starBtn(it)}
       ${it.downloaded ? `<button class="gread" data-read="${esc(it.key)}"
           title="Read">▸</button>` : ""}
       ${it.finished ? `<span class="gfin">✓</span>` : ""}
@@ -3862,6 +3892,24 @@ $("libView").querySelectorAll("button").forEach(b=>{
     renderLibrary();
   };
 });
+
+/* The wide-card toggle. It changes how the GRID draws, not which view is chosen,
+   and it is only drawn on a phone — so pressing it never needs to switch views
+   to be visible. `aria-pressed` carries the state for the same reason the eye's
+   does: a glyph alone does not say whether the mode is on. */
+if($("libStrip")){
+  $("libStrip").classList.toggle("on", libStrip);
+  $("libStrip").setAttribute("aria-pressed", String(libStrip));
+  $("libStrip").onclick = ()=>{
+    libStrip = !libStrip;
+    localStorage.setItem("hr.libStrip", libStrip ? "1" : "0");
+    $("libStrip").classList.toggle("on", libStrip);
+    $("libStrip").setAttribute("aria-pressed", String(libStrip));
+    if(libView !== "grid"){ libView = "grid"; localStorage.setItem("hr.libView", libView);
+      $("libView").querySelectorAll("button").forEach(x=>x.classList.toggle("on", x.dataset.view === libView)); }
+    renderLibrary();
+  };
+}
 
 $("libChips").querySelectorAll("button").forEach(b=>{
   b.classList.toggle("on", b.dataset.chip === libChip);
