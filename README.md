@@ -1,6 +1,6 @@
 # HardlyReading
 
-No longer updated** Now available as an extension for a new project for comics/manga using mihon extensions/backups: 
+No longer updated** Now available as an extension (built-in) for a new project for comics/manga using mihon extensions/backups: 
 
 https://github.com/hardlysleeping/hardlytracking
 
