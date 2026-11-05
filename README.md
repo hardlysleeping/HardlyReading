@@ -1,6 +1,7 @@
 # HardlyReading
 
 No longer updated** Now available as an extension for a new project for comics/manga using mihon extensions/backups: 
+
 https://github.com/hardlysleeping/hardlytracking
 
 Desktop-friendly web app for grabbing magazines, comics and PDFs from
