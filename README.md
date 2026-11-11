@@ -7,12 +7,6 @@ https://github.com/hardlysleeping/hardlytracking
 Desktop-friendly web app for grabbing magazines, comics and PDFs from
 [Internet Archive](https://archive.org) and reading them locally.
 
-> **Built with AI.** HardlyReading was made using **DeepSeek V4.1 Flash** running
-> inside a **Hermes agent** — an autonomous coding agent that wrote the code,
-> ran the tests and cut the releases. It is a real, working program, but it was
-> not hand-typed by a person, and it has only been tested on Linux (see
-> [Limitations](#limitations)).
-
 Paste a collection link (or an item link, or a search result), it resolves every
 member, downloads one good file per issue — **CBZ/CBR first, then PDF** — verifies
 each one against archive.org's checksum, and files it into a Komga-compatible
